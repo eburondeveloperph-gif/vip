@@ -410,13 +410,13 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
              clientContent: {
                turns: [{
                  role: 'user',
-                 parts: [{ text: "Hello! Setup complete. Please greet me normally." }]
+                 parts: [{ text: "System connected. Master E has arrived. Let me know you're here." }]
                }],
                turnComplete: true
              }
            });
         }
-      }, 1000);
+      }, 500);
     } catch (err) {
       setConnecting(false);
       stopSession();
@@ -426,7 +426,7 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
   const toggleVideo = async () => {
     if (!isVideoEnabled) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode, width: 320, height: 240 } });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play();
@@ -464,6 +464,54 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
       }
       if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
       setIsVideoEnabled(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    if (sessionRef.current && videoRef.current && canvasRef.current) {
+      const v = videoRef.current;
+      const c = canvasRef.current;
+      const ctx = c.getContext('2d');
+      if (ctx && v.videoWidth && v.videoHeight) {
+        c.width = v.videoWidth;
+        c.height = v.videoHeight;
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        const base64Url = c.toDataURL('image/jpeg', 0.8);
+        const base64Data = base64Url.split(',')[1];
+        if (base64Data) {
+          sessionRef.current.send({
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{ text: "Master E just captured this photo for you. Pay close attention to it." }, { inlineData: { data: base64Data, mimeType: 'image/jpeg'} }]
+              }],
+              turnComplete: true
+            }
+          });
+          saveMessage('user', '[Sent Photo]');
+        }
+      }
+    }
+  };
+
+  const switchCamera = async () => {
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newMode);
+    
+    if (isVideoEnabled) {
+      if (videoRef.current && videoRef.current.srcObject) {
+         const stream = videoRef.current.srcObject as MediaStream;
+         stream.getTracks().forEach((t) => t.stop());
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newMode, width: 320, height: 240 } });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.error("Video play err", e));
+        }
+      } catch (e) {
+        console.error("Camera switch error:", e);
+      }
     }
   };
 
@@ -592,155 +640,156 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
                         </div>
                     ) : (
                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] uppercase tracking-[0.4em] text-zinc-600 font-bold mb-2">Maximus Engine</span>
-                          <div className="w-12 h-0.5 bg-zinc-800 rounded-full" />
+                          <div className="w-12 h-0.5 bg-zinc-800 rounded-full opacity-50" />
                        </div>
                     )
                  )}
                </motion.div>
            </div>
 
-           {/* Transcription Overlay */}
-           <div className="absolute bottom-[280px] left-0 right-0 w-full px-6 flex flex-col items-center justify-center pointer-events-none z-40">
-             <AnimatePresence mode="wait">
-               {currentTranscript && (
-                 <motion.div
-                   key={currentTranscript.role}
-                   initial={{ opacity: 0, y: 10 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   exit={{ opacity: 0, y: 10 }}
-                   className="text-center max-w-2xl w-full bg-black/40 backdrop-blur-md border border-white/5 px-6 py-4 rounded-3xl shadow-xl"
-                 >
-                   <span className={`text-[10px] uppercase tracking-[0.3em] font-bold mb-1 block ${currentTranscript.role === 'model' ? 'text-amber-500' : 'text-zinc-500'}`}>
-                      {currentTranscript.role === 'user' ? 'You' : settings.personaName}
-                   </span>
-                   <p className={`text-lg md:text-xl font-light tracking-tight leading-snug drop-shadow-sm ${currentTranscript.role === 'model' ? 'text-zinc-100 font-serif' : 'text-zinc-300'}`}>
-                     {currentTranscript.text}
-                   </p>
-                 </motion.div>
-               )}
-             </AnimatePresence>
-           </div>
-
-           {/* Trigger / Controls */}
-           <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center gap-6 z-50 pointer-events-auto">
-              <div className="flex justify-center items-center gap-8">
-              {/* Mic Sub-button */}
-              <button 
-                onClick={() => setIsMuted(p => !p)}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
-                   isMuted ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
-                }`}
-              >
-                 {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </button>
-
-              {/* Main Power */}
-              {!isActive ? (
-                <button 
-                  onClick={startSession}
-                  disabled={connecting}
-                  className="group relative"
-                >
-                  <div className="absolute -inset-4 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all opacity-0 group-hover:opacity-100" />
-                  <div className="relative w-20 h-20 bg-[#0A0A0B] border border-white/10 rounded-full flex items-center justify-center group-hover:border-amber-500/50 transition-all shadow-2xl">
-                    <Power className={`w-8 h-8 transition-colors ${connecting ? 'text-zinc-700' : 'text-amber-500'}`} />
-                  </div>
-                </button>
-              ) : (
-                <button 
-                  onClick={stopSession}
-                  className="group relative"
-                >
-                  <div className="absolute -inset-4 bg-red-500/10 rounded-full blur-xl opacity-100" />
-                  <div className="relative w-20 h-20 bg-[#0A0A0B] border border-red-500/20 rounded-full flex items-center justify-center hover:border-red-500/50 transition-all shadow-2xl">
-                    <Square className="w-6 h-6 text-red-500 fill-current" />
-                  </div>
-                </button>
-              )}
-
-              {/* Video Sub-button */}
-              <button 
-                onClick={() => toggleVideo()}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
-                   isVideoEnabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
-                }`}
-              >
-                 {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-              </button>
-              </div>
-
-              {/* Camera specific controls */}
-              <AnimatePresence>
-                {isVideoEnabled && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="flex justify-center items-center gap-4 mt-2"
-                  >
-                     <button onClick={switchCamera} className="px-4 py-2 bg-black/60 backdrop-blur-md rounded-full border border-white/10 text-[10px] uppercase tracking-widest text-zinc-300 font-bold hover:text-white hover:border-white/30 transition-all flex items-center gap-2">
-                        Flip Camera
-                     </button>
-                     <button onClick={capturePhoto} className="px-4 py-2 bg-emerald-500/20 backdrop-blur-md rounded-full border border-emerald-500/30 text-[10px] uppercase tracking-widest text-emerald-500 font-bold hover:bg-emerald-500/30 transition-all flex items-center gap-2">
-                        <Camera className="w-3 h-3" /> Capture
-                     </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-           </div>
-           
-           {/* Dynamic Background Tasks / HUD */}
-           <div className="absolute bottom-[380px] left-8 right-8 pointer-events-none z-30">
-              <div className="max-w-md mx-auto space-y-2">
-                <AnimatePresence>
-                  {tasks.map(task => (
-                    <motion.div
-                      key={task.id}
-                      layout
-                      initial={{ opacity: 0, x: -50, scale: 0.9 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
-                      className="p-3 bg-[#0A0A0B]/80 backdrop-blur-xl border border-white/5 rounded-xl shadow-2xl flex items-center gap-4 border-l-2 border-l-amber-500/50"
-                    >
-                      <div className="relative flex-shrink-0">
-                         {task.status === 'processing' ? (
-                           <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                         ) : (
-                           <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                              <Check className="w-2.5 h-2.5 text-black" strokeWidth={4} />
-                           </div>
-                         )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                         <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-[9px] uppercase tracking-widest text-amber-500 font-bold">{task.serviceName}</span>
-                            <span className="text-[8px] font-mono text-zinc-600">{task.status.toUpperCase()}</span>
-                         </div>
-                         <p className="text-xs text-zinc-100 truncate">{task.action}</p>
-                         {task.result && (
-                           <motion.p 
-                             initial={{ opacity: 0, height: 0 }}
-                             animate={{ opacity: 1, height: 'auto' }}
-                             className="text-[10px] text-zinc-400 mt-1 leading-tight"
-                           >
-                              {task.result}
-                           </motion.p>
-                         )}
-                      </div>
-                      {task.status === 'processing' && (
-                        <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                           <motion.div 
-                             animate={{ x: ['-100%', '100%'] }} 
-                             transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                             className="w-full h-full bg-amber-500/50" 
-                           />
+           {/* HUD, Transcription, and Controls grouped at bottom */}
+           <div className="absolute inset-x-0 bottom-8 flex flex-col items-center justify-end pointer-events-none z-50">
+             
+             {/* Dynamic Background Tasks / HUD */}
+             <div className="w-full max-w-md px-6 space-y-2 mb-4">
+               <AnimatePresence>
+                 {tasks.map(task => (
+                   <motion.div
+                     key={task.id}
+                     layout
+                     initial={{ opacity: 0, x: -50, scale: 0.9 }}
+                     animate={{ opacity: 1, x: 0, scale: 1 }}
+                     exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
+                     className="p-3 bg-[#0A0A0B]/80 backdrop-blur-xl border border-white/5 rounded-xl shadow-2xl flex items-center gap-4 border-l-2 border-l-amber-500/50"
+                   >
+                     <div className="relative flex-shrink-0">
+                        {task.status === 'processing' ? (
+                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                        ) : (
+                          <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                             <Check className="w-2.5 h-2.5 text-black" strokeWidth={4} />
+                          </div>
+                        )}
+                     </div>
+                     <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                           <span className="text-[9px] uppercase tracking-widest text-amber-500 font-bold">{task.serviceName}</span>
+                           <span className="text-[8px] font-mono text-zinc-600">{task.status.toUpperCase()}</span>
                         </div>
-                      )}
+                        <p className="text-xs text-zinc-100 truncate">{task.action}</p>
+                        {task.result && (
+                          <motion.p 
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            className="text-[10px] text-zinc-400 mt-1 leading-tight"
+                          >
+                             {task.result}
+                          </motion.p>
+                        )}
+                     </div>
+                     {task.status === 'processing' && (
+                       <div className="w-16 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                          <motion.div 
+                            animate={{ x: ['-100%', '100%'] }} 
+                            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                            className="w-full h-full bg-amber-500/50" 
+                          />
+                       </div>
+                     )}
+                   </motion.div>
+                 ))}
+               </AnimatePresence>
+             </div>
+
+             {/* Transcription Overlay */}
+             <div className="w-full max-w-2xl px-6 flex flex-col items-center justify-center mb-6 h-auto min-h-[5rem]">
+               <AnimatePresence mode="wait">
+                 {currentTranscript && (
+                   <motion.div
+                     key={currentTranscript.role}
+                     initial={{ opacity: 0, y: 10 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     exit={{ opacity: 0, y: 10 }}
+                     className="text-center max-w-2xl w-full bg-black/40 backdrop-blur-md border border-white/5 px-6 py-4 rounded-3xl shadow-xl"
+                   >
+                     <span className={`text-[10px] uppercase tracking-[0.3em] font-bold mb-1 block ${currentTranscript.role === 'model' ? 'text-amber-500' : 'text-zinc-500'}`}>
+                        {currentTranscript.role === 'user' ? 'You' : settings.personaName}
+                     </span>
+                     <p className={`text-lg md:text-xl font-light tracking-tight leading-snug drop-shadow-sm ${currentTranscript.role === 'model' ? 'text-zinc-100 font-serif' : 'text-zinc-300'}`}>
+                       {currentTranscript.text}
+                     </p>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
+             </div>
+
+             {/* Trigger / Controls */}
+             <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
+                <div className="flex justify-center items-center gap-8">
+                {/* Mic Sub-button */}
+                <button 
+                  onClick={() => setIsMuted(p => !p)}
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
+                     isMuted ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                  }`}
+                >
+                   {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+
+                {/* Main Power */}
+                {!isActive ? (
+                  <button 
+                    onClick={startSession}
+                    disabled={connecting}
+                    className="group relative"
+                  >
+                    <div className="absolute -inset-4 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all opacity-0 group-hover:opacity-100" />
+                    <div className="relative w-20 h-20 bg-[#0A0A0B] border border-white/10 rounded-full flex items-center justify-center group-hover:border-amber-500/50 transition-all shadow-2xl">
+                      <Power className={`w-8 h-8 transition-colors ${connecting ? 'text-zinc-700' : 'text-amber-500'}`} />
+                    </div>
+                  </button>
+                ) : (
+                  <button 
+                    onClick={stopSession}
+                    className="group relative"
+                  >
+                    <div className="absolute -inset-4 bg-red-500/10 rounded-full blur-xl opacity-100" />
+                    <div className="relative w-20 h-20 bg-[#0A0A0B] border border-red-500/20 rounded-full flex items-center justify-center hover:border-red-500/50 transition-all shadow-2xl">
+                      <Square className="w-6 h-6 text-red-500 fill-current" />
+                    </div>
+                  </button>
+                )}
+
+                {/* Video Sub-button */}
+                <button 
+                  onClick={() => toggleVideo()}
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
+                     isVideoEnabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                  }`}
+                >
+                   {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                </button>
+                </div>
+
+                {/* Camera specific controls */}
+                <AnimatePresence>
+                  {isVideoEnabled && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="flex justify-center items-center gap-4"
+                    >
+                       <button onClick={switchCamera} className="px-4 py-2 bg-black/60 backdrop-blur-md rounded-full border border-white/10 text-[10px] uppercase tracking-widest text-zinc-300 font-bold hover:text-white hover:border-white/30 transition-all flex items-center gap-2">
+                          Flip Camera
+                       </button>
+                       <button onClick={capturePhoto} className="px-4 py-2 bg-emerald-500/20 backdrop-blur-md rounded-full border border-emerald-500/30 text-[10px] uppercase tracking-widest text-emerald-500 font-bold hover:bg-emerald-500/30 transition-all flex items-center gap-2">
+                          <Camera className="w-3 h-3" /> Capture
+                       </button>
                     </motion.div>
-                  ))}
+                  )}
                 </AnimatePresence>
-              </div>
+             </div>
            </div>
         </main>
 
