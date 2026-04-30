@@ -45,7 +45,6 @@ import {
   Bot,
   FileText,
   Send,
-  MessageSquare,
   ExternalLink,
   Code2,
 } from 'lucide-react';
@@ -2920,14 +2919,7 @@ function MaximusAgent({
             </div>
 
             <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
-              <div className="flex items-center justify-center gap-5">
-                <button
-                  onClick={() => setShowSidebar(true)}
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#0A0A0B] text-zinc-400 shadow-lg transition-all hover:border-lime-300/40 hover:text-lime-200"
-                >
-                  <MessageSquare className="h-5 w-5" />
-                </button>
-
+              <div className="flex items-center justify-center gap-8">
                 <button
                   onClick={() => setIsMuted(p => !p)}
                   className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
