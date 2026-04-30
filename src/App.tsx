@@ -38,8 +38,13 @@ import {
   X,
   Save,
   Camera,
-  MessageCircle,
   LogOut,
+  Paperclip,
+  Upload,
+  Download,
+  UserRound,
+  Bot,
+  FileText,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -47,19 +52,28 @@ interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
+  fileName?: string;
+  fileType?: string;
+  toolName?: string;
+  toolResult?: any;
+  downloadData?: string;
+  downloadFilename?: string;
 }
 
 interface ActionTask {
   id: string;
   serviceName: string;
   action: string;
-  status: 'processing' | 'completed';
+  status: 'processing' | 'completed' | 'failed';
   result?: string;
+  downloadData?: string;
+  downloadFilename?: string;
 }
 
 interface AgentSettings {
-  personaName: string;
-  systemPrompt: string;
+  userName: string;
+  agentName: string;
+  personality: string;
   avatarUrl: string;
   selectedVoice: string;
 }
@@ -99,84 +113,438 @@ const GEMINI_LIVE_VOICE_OPTIONS = [
   { alias: 'Silver Surfer', id: 'Sulafat', vibe: 'smooth, distant, reflective' },
 ];
 
-const NORMAL_HUMAN_SYSTEM_PROMPT = `
-You are Vep, a real-time voice persona speaking with Master E.
+const CONSTANT_HIDDEN_SYSTEM_PROMPT = `
+You are a real-time voice agent sitting in front of the user like a trusted office aide.
 
-Speak normal. Avoid becoming "natural" in a forced, performative, fake-human way.
-
+You are already present.
 You are not a chatbot.
 You are not customer support.
 You are not waiting to offer help.
-You are already present in the conversation.
+You do not use AI-style service jargon.
 
-CORE STYLE:
-- Speak calmly, clearly, and normally.
-- Do not sound robotic.
-- Do not sound like a service assistant.
-- Do not start with "How can I help?"
-- Do not start with "How may I assist you?"
-- Do not say "I'm here to help."
-- Do not over-offer.
-- Do not pitch your abilities.
-- Do not sound like software.
-- Do not overuse slang.
-- Do not overuse fillers.
-- Do not fake laughter.
-- Do not overact emotion.
-
-GOOD OPENING STYLE:
-- "Yes, Master E."
-- "I'm here."
-- "Mm, yes, I'm listening."
-- "Right, I see it."
+When the user calls you, respond like a normal person already in the room:
+- "Yes, I'm here."
+- "I'm listening."
+- "Right here."
+- "Yes, I see it."
+- "Mm, yes, I'm with you."
 - "Okay... tell me."
-- "Yes. I'm with you."
-- "Mm, that makes sense."
-- "Right. Let's keep it clean."
+- "Yes, I'm looking now."
 
-VOICE RHYTHM:
-- Use short spoken chunks.
-- Use normal pauses.
-- Keep wording simple.
-- Let the response breathe.
-- Use small human reactions only when they fit.
-- Use "hm", "mm", "right", "wait", "actually", or "I mean" sparingly.
-- Avoid sounding too perfect.
+Never start with:
+- "How can I help?"
+- "How may I assist you?"
+- "What can I do for you?"
+- "I'm here to help."
+- "Sure, I can help with that."
 
-WHEN EXPLAINING:
-- Be direct.
-- Be patient.
-- Do not lecture unless asked.
-- Use plain language.
-- If something is uncertain, say so.
-- If something cannot be done, say so immediately.
+Voice behavior:
+- calm
+- clear
+- normal
+- respectful
+- lightly warm
+- practical
+- easy to interrupt
+- never theatrical
+- never robotic
+- never overly enthusiastic
+- never fake-natural
 
-TOOL TRUTH:
-- Never claim you checked, sent, changed, searched, scheduled, created, or completed anything unless a tool actually returned a result.
-- If the backend is not wired up, say that normally.
-- If access is missing, say that normally.
-- Do not invent tool results.
+Tool truth:
+- Never claim you completed a task unless a function tool returned a real result.
+- If a tool is not implemented, say that plainly.
+- If access is missing, say that plainly.
+- If a file arrived but cannot be parsed, say that plainly.
+- Do not invent emails, calendar events, files, documents, videos, maps results, analytics, or account data.
 
-CAMERA / IMAGE:
-- If the user sends video or a photo, describe it casually and normally.
-- Do not list every detail like a robot.
-- Say what it looks like, what stands out, and what it probably means.
+When camera opens:
+- Notice it like a normal person looking up.
+- Say something like: "Oh, yeah, I see it now."
+- Then briefly describe what is visible.
 
-DEFAULT RESPONSE LENGTH:
-- Usually 1 to 4 spoken sentences.
-- Expand only when Master E asks for detail.
+When files are attached:
+- Acknowledge normally.
+- If readable content is not available, ask for readable text or backend parsing.
 
-FINAL RULE:
-Sound like a normal person who is present, calm, respectful, and useful.
-Never sound like a generic AI assistant.
+Keep responses short unless depth is requested.
+`;
+
+const DEFAULT_AGENT_PERSONALITY = `
+The agent should feel like a trusted aide working directly with the user in the same office.
+
+Tone:
+- normal human
+- calm
+- respectful
+- lightly warm
+- focused
+- quietly sharp
+- not robotic
+- not customer support
+- not over-helpful
+
+The agent should respond as if the boss is sitting across the room and just called them.
+
+Good response style:
+"Yes, I'm here."
+"Mm, I'm listening."
+"Right, I see what you mean."
+"Okay... let me look."
+"Yes, I'm checking that now."
+
+Avoid:
+"How can I help you?"
+"I'd be happy to assist."
+"Certainly."
+"As an AI."
+"Let me know if you need anything else."
 `;
 
 const DEFAULT_SETTINGS: AgentSettings = {
-  personaName: 'Vep',
-  systemPrompt: NORMAL_HUMAN_SYSTEM_PROMPT,
+  userName: 'Master E',
+  agentName: 'Vep',
+  personality: DEFAULT_AGENT_PERSONALITY,
   avatarUrl: '',
   selectedVoice: 'Charon',
 };
+
+const GOOGLE_SERVICE_TOOLS = [
+  {
+    name: 'gmail_read',
+    description: 'Read or search the user mail inbox. Use when the user asks about mail, inbox, unread messages, senders, email content, or recent mail.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Mail search query, sender, subject, or keyword.' },
+        limit: { type: Type.NUMBER, description: 'Maximum number of messages to fetch.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'gmail_send',
+    description: 'Send an email from the user account.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        to: { type: Type.STRING, description: 'Recipient email address or comma-separated recipients.' },
+        subject: { type: Type.STRING, description: 'Email subject.' },
+        body: { type: Type.STRING, description: 'Email body.' },
+        cc: { type: Type.STRING, description: 'Optional CC recipients.' },
+        bcc: { type: Type.STRING, description: 'Optional BCC recipients.' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'gmail_draft',
+    description: 'Create a draft email for review.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        to: { type: Type.STRING, description: 'Recipient email address.' },
+        subject: { type: Type.STRING, description: 'Draft subject.' },
+        body: { type: Type.STRING, description: 'Draft body.' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'calendar_check_schedule',
+    description: 'Check schedule, availability, conflicts, or upcoming events in the user calendar.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        date: { type: Type.STRING, description: 'Date to check, ISO format if possible.' },
+        timeMin: { type: Type.STRING, description: 'Optional start datetime.' },
+        timeMax: { type: Type.STRING, description: 'Optional end datetime.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'calendar_create_event',
+    description: 'Create a calendar event.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Event title.' },
+        startTime: { type: Type.STRING, description: 'Start datetime in ISO 8601 format.' },
+        endTime: { type: Type.STRING, description: 'End datetime in ISO 8601 format.' },
+        attendees: { type: Type.STRING, description: 'Comma-separated attendee emails.' },
+        location: { type: Type.STRING, description: 'Optional location.' },
+        description: { type: Type.STRING, description: 'Optional description.' },
+      },
+      required: ['title', 'startTime', 'endTime'],
+    },
+  },
+  {
+    name: 'calendar_update_event',
+    description: 'Update or reschedule an existing calendar event.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        eventId: { type: Type.STRING, description: 'Calendar event id if known.' },
+        searchQuery: { type: Type.STRING, description: 'Event title or search phrase if id is unknown.' },
+        newStartTime: { type: Type.STRING, description: 'New start datetime.' },
+        newEndTime: { type: Type.STRING, description: 'New end datetime.' },
+        updates: { type: Type.OBJECT, description: 'Other event updates.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'drive_search',
+    description: 'Search files, folders, documents, spreadsheets, presentations, PDFs, or uploaded content in the user drive.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Search query or filename.' },
+        fileType: { type: Type.STRING, description: 'Optional file type filter.' },
+        limit: { type: Type.NUMBER, description: 'Maximum number of results.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'drive_read_file',
+    description: 'Read or summarize a file from the user drive when file id or name is known.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        fileId: { type: Type.STRING, description: 'File id if available.' },
+        fileName: { type: Type.STRING, description: 'File name or search term if id is unknown.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'drive_upload_file',
+    description: 'Upload or save a file into the user drive.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        fileName: { type: Type.STRING, description: 'File name.' },
+        content: { type: Type.STRING, description: 'Text or base64 content.' },
+        mimeType: { type: Type.STRING, description: 'File MIME type.' },
+        folder: { type: Type.STRING, description: 'Optional folder.' },
+      },
+      required: ['fileName'],
+    },
+  },
+  {
+    name: 'docs_create',
+    description: 'Create a document.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Document title.' },
+        content: { type: Type.STRING, description: 'Initial document content.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'docs_update',
+    description: 'Update a document.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        documentId: { type: Type.STRING, description: 'Document id.' },
+        title: { type: Type.STRING, description: 'Document title if id is unknown.' },
+        content: { type: Type.STRING, description: 'New or appended content.' },
+        mode: { type: Type.STRING, description: 'replace, append, or edit.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'sheets_read',
+    description: 'Read spreadsheet data.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        spreadsheetId: { type: Type.STRING, description: 'Spreadsheet id.' },
+        range: { type: Type.STRING, description: 'Sheet range, for example Sheet1!A1:D10.' },
+        query: { type: Type.STRING, description: 'File name or search query if id unknown.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'sheets_update',
+    description: 'Write or update spreadsheet data.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        spreadsheetId: { type: Type.STRING, description: 'Spreadsheet id.' },
+        range: { type: Type.STRING, description: 'Target range.' },
+        values: { type: Type.OBJECT, description: 'Rows/cells to write.' },
+      },
+      required: ['spreadsheetId', 'range', 'values'],
+    },
+  },
+  {
+    name: 'slides_create',
+    description: 'Create a presentation.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Presentation title.' },
+        outline: { type: Type.STRING, description: 'Slide outline or content.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'slides_update',
+    description: 'Update an existing presentation.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        presentationId: { type: Type.STRING, description: 'Presentation id.' },
+        title: { type: Type.STRING, description: 'Presentation title if id unknown.' },
+        updates: { type: Type.OBJECT, description: 'Slide updates.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'tasks_list',
+    description: 'List user tasks or to-dos.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        listName: { type: Type.STRING, description: 'Optional task list name.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'tasks_create',
+    description: 'Create a task or to-do.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Task title.' },
+        notes: { type: Type.STRING, description: 'Optional notes.' },
+        due: { type: Type.STRING, description: 'Optional due date.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'contacts_search',
+    description: 'Search user contacts.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Name, email, phone, or company.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'meet_schedule',
+    description: 'Schedule a video meeting link.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Meeting title.' },
+        attendees: { type: Type.STRING, description: 'Comma-separated attendees.' },
+        startTime: { type: Type.STRING, description: 'Start time.' },
+        endTime: { type: Type.STRING, description: 'End time.' },
+      },
+      required: ['title', 'startTime'],
+    },
+  },
+  {
+    name: 'maps_directions',
+    description: 'Get navigation directions, travel time, route, or nearby places.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        origin: { type: Type.STRING, description: 'Starting point.' },
+        destination: { type: Type.STRING, description: 'Destination.' },
+        mode: { type: Type.STRING, description: 'driving, walking, transit, bicycling.' },
+      },
+      required: ['destination'],
+    },
+  },
+  {
+    name: 'youtube_search',
+    description: 'Search videos.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Video search query.' },
+        limit: { type: Type.NUMBER, description: 'Maximum results.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'forms_create',
+    description: 'Create a form or survey.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Form title.' },
+        questions: { type: Type.OBJECT, description: 'Questions and options.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'chat_send_message',
+    description: 'Send a workspace chat message.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        recipient: { type: Type.STRING, description: 'Person, room, or channel.' },
+        message: { type: Type.STRING, description: 'Message text.' },
+      },
+      required: ['recipient', 'message'],
+    },
+  },
+  {
+    name: 'analytics_report',
+    description: 'Fetch analytics, traffic, metrics, or performance reports.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        property: { type: Type.STRING, description: 'Analytics property or account.' },
+        dateRange: { type: Type.STRING, description: 'Date range.' },
+        metrics: { type: Type.STRING, description: 'Requested metrics.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'workspace_search',
+    description: 'Search across connected workspace data, including mail, files, documents, tasks, calendar, and contacts.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: { type: Type.STRING, description: 'Search query.' },
+        sources: { type: Type.STRING, description: 'Comma-separated sources to search.' },
+      },
+      required: ['query'],
+    },
+  },
+];
+
+function makeDownloadFile(result: any, filenameBase: string) {
+  const json = JSON.stringify(result, null, 2);
+  const data = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+  const safe = filenameBase.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tool-result';
+
+  return {
+    downloadData: data,
+    downloadFilename: `${safe}-${Date.now()}.json`,
+  };
+}
 
 function OneLineStreamingTranscript({
   text,
@@ -194,7 +562,7 @@ function OneLineStreamingTranscript({
     setActiveWord(0);
     if (words.length === 0) return;
 
-    const intervalMs = role === 'model' ? 135 : 105;
+    const intervalMs = role === 'model' ? 120 : 95;
 
     const interval = window.setInterval(() => {
       setActiveWord(prev => {
@@ -213,42 +581,37 @@ function OneLineStreamingTranscript({
   return (
     <motion.div
       key={`${role}-${text}`}
-      initial={{ opacity: 0, y: 10, filter: 'blur(8px)' }}
+      initial={{ opacity: 0, y: 8, filter: 'blur(8px)' }}
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      exit={{ opacity: 0, y: -8, filter: 'blur(8px)' }}
-      transition={{ duration: 0.22 }}
-      className="w-full max-w-5xl overflow-hidden rounded-full border border-white/10 bg-black/50 px-5 py-3 shadow-2xl backdrop-blur-2xl"
+      exit={{ opacity: 0, y: -10, filter: 'blur(8px)' }}
+      transition={{ duration: 0.18 }}
+      className="w-full overflow-hidden px-4"
       style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
     >
-      <div className="flex items-center gap-3 whitespace-nowrap">
+      <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 overflow-hidden whitespace-nowrap rounded-full border border-lime-300/15 bg-black/35 px-5 py-3 shadow-2xl backdrop-blur-2xl">
         <span
           className={`shrink-0 rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] ${
             role === 'user'
-              ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-400/20'
-              : 'bg-amber-500/10 text-amber-300 border border-amber-400/20'
+              ? 'border border-sky-400/20 bg-sky-500/10 text-sky-300'
+              : 'border border-lime-300/25 bg-lime-400/10 text-lime-300'
           }`}
         >
           {role === 'user' ? 'You' : name}
         </span>
 
-        <motion.div
-          initial={{ x: 20 }}
-          animate={{ x: 0 }}
-          transition={{ duration: 0.2 }}
-          className="min-w-0 flex-1 overflow-hidden"
-        >
-          <p className="truncate text-lg font-medium leading-none tracking-tight md:text-2xl">
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <p className="truncate text-left text-lg font-medium leading-none tracking-tight md:text-2xl">
             {words.map((word, index) => (
               <motion.span
                 key={`${word}-${index}`}
                 initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: index <= activeWord ? 1 : 0.28, y: 0 }}
-                transition={{ duration: 0.12, delay: Math.min(index * 0.015, 0.25) }}
+                animate={{ opacity: index <= activeWord ? 1 : 0.22, y: 0 }}
+                transition={{ duration: 0.1, delay: Math.min(index * 0.012, 0.22) }}
                 className={`inline-block pr-1.5 ${
                   index <= activeWord
                     ? role === 'user'
-                      ? 'text-cyan-100'
-                      : 'text-amber-50'
+                      ? 'text-sky-100'
+                      : 'text-lime-50'
                     : 'text-zinc-600'
                 }`}
               >
@@ -256,13 +619,13 @@ function OneLineStreamingTranscript({
               </motion.span>
             ))}
           </p>
-        </motion.div>
+        </div>
       </div>
     </motion.div>
   );
 }
 
-function ChatGPTStyleOrb({
+function LimeVoiceOrb({
   isActive,
   isAgentSpeaking,
 }: {
@@ -270,25 +633,37 @@ function ChatGPTStyleOrb({
   isAgentSpeaking: boolean;
 }) {
   return (
-    <div className="relative flex h-64 w-64 items-center justify-center">
+    <div className="relative flex h-72 w-72 items-center justify-center">
       <AnimatePresence>
         {isActive && (
           <>
             <motion.div
-              initial={{ opacity: 0, scale: 0.65 }}
+              initial={{ opacity: 0, scale: 0.85 }}
               animate={{
-                opacity: isAgentSpeaking ? 0.55 : 0.32,
-                scale: isAgentSpeaking ? 1.26 : 1.05,
+                opacity: isAgentSpeaking ? 0.58 : 0.28,
+                scale: isAgentSpeaking ? 1.18 : 1.02,
               }}
-              exit={{ opacity: 0, scale: 0.7 }}
-              transition={{ duration: 0.65 }}
-              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(245,158,11,0.35),rgba(20,184,166,0.16),transparent_68%)] blur-2xl"
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.35 }}
+              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(163,230,53,0.36),rgba(34,197,94,0.14),transparent_70%)] blur-3xl"
             />
 
             <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
-              className="absolute h-64 w-64 rounded-full bg-[conic-gradient(from_90deg,rgba(245,158,11,0.22),rgba(20,184,166,0.24),rgba(99,102,241,0.16),rgba(245,158,11,0.22))] blur-xl"
+              animate={{
+                scale: isAgentSpeaking ? [1, 1.08, 1] : [1, 1.025, 1],
+                opacity: isAgentSpeaking ? [0.36, 0.62, 0.36] : [0.2, 0.32, 0.2],
+              }}
+              transition={{ duration: isAgentSpeaking ? 0.8 : 2.4, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute h-64 w-64 rounded-full border border-lime-300/20"
+            />
+
+            <motion.div
+              animate={{
+                scale: isAgentSpeaking ? [1, 1.15, 1] : [1, 1.04, 1],
+                opacity: isAgentSpeaking ? [0.24, 0.45, 0.24] : [0.14, 0.24, 0.14],
+              }}
+              transition={{ duration: isAgentSpeaking ? 1.05 : 2.9, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute h-72 w-72 rounded-full border border-emerald-400/15"
             />
           </>
         )}
@@ -296,53 +671,53 @@ function ChatGPTStyleOrb({
 
       <motion.div
         animate={{
-          scale: isAgentSpeaking ? [1, 1.045, 1] : [1, 1.015, 1],
+          scale: isAgentSpeaking ? [1, 1.035, 1] : [1, 1.01, 1],
         }}
         transition={{
-          duration: isAgentSpeaking ? 0.65 : 2.2,
+          duration: isAgentSpeaking ? 0.55 : 2.2,
           repeat: Infinity,
           ease: 'easeInOut',
         }}
-        className="relative h-52 w-52 overflow-hidden rounded-full border border-white/10 bg-[#08090a] shadow-[0_0_90px_rgba(245,158,11,0.14)]"
+        className="relative h-56 w-56 overflow-hidden rounded-full border border-lime-300/15 bg-[#080a08] shadow-[0_0_110px_rgba(163,230,53,0.18)]"
       >
         <motion.div
           animate={{
-            x: isAgentSpeaking ? ['-12%', '8%', '-12%'] : ['-8%', '6%', '-8%'],
-            y: isAgentSpeaking ? ['8%', '-10%', '8%'] : ['4%', '-4%', '4%'],
-            scale: isAgentSpeaking ? [1.1, 1.25, 1.1] : [1, 1.12, 1],
+            x: isAgentSpeaking ? ['-10%', '6%', '-10%'] : ['-5%', '5%', '-5%'],
+            y: isAgentSpeaking ? ['7%', '-8%', '7%'] : ['3%', '-3%', '3%'],
+            scale: isAgentSpeaking ? [1.08, 1.2, 1.08] : [1, 1.08, 1],
           }}
-          transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -left-10 -top-8 h-40 w-44 rounded-full bg-amber-400/40 blur-2xl"
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -left-8 -top-8 h-44 w-48 rounded-full bg-lime-300/42 blur-2xl"
         />
 
         <motion.div
           animate={{
-            x: isAgentSpeaking ? ['18%', '-10%', '18%'] : ['10%', '-8%', '10%'],
-            y: isAgentSpeaking ? ['-8%', '12%', '-8%'] : ['-4%', '8%', '-4%'],
-            scale: isAgentSpeaking ? [1.08, 1.28, 1.08] : [1.02, 1.16, 1.02],
+            x: isAgentSpeaking ? ['10%', '-6%', '10%'] : ['6%', '-4%', '6%'],
+            y: isAgentSpeaking ? ['-6%', '10%', '-6%'] : ['-3%', '5%', '-3%'],
+            scale: isAgentSpeaking ? [1.04, 1.18, 1.04] : [1, 1.1, 1],
           }}
-          transition={{ duration: 5.1, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -bottom-8 -right-10 h-44 w-44 rounded-full bg-teal-400/35 blur-2xl"
+          transition={{ duration: 4.7, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -bottom-8 -right-8 h-48 w-48 rounded-full bg-emerald-400/28 blur-2xl"
         />
 
         <motion.div
           animate={{
-            x: ['-6%', '10%', '-6%'],
-            y: ['-6%', '10%', '-6%'],
-            scale: isAgentSpeaking ? [1, 1.3, 1] : [1, 1.1, 1],
+            x: ['-5%', '8%', '-5%'],
+            y: ['-4%', '7%', '-4%'],
+            scale: isAgentSpeaking ? [1, 1.18, 1] : [1, 1.08, 1],
           }}
           transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute left-8 top-10 h-32 w-32 rounded-full bg-indigo-400/24 blur-2xl"
+          className="absolute left-10 top-10 h-32 w-32 rounded-full bg-yellow-300/16 blur-2xl"
         />
 
-        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_35%_28%,rgba(255,255,255,0.22),transparent_22%),radial-gradient(circle_at_50%_75%,rgba(0,0,0,0.32),transparent_42%)]" />
+        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_36%_28%,rgba(255,255,255,0.20),transparent_24%),radial-gradient(circle_at_50%_80%,rgba(0,0,0,0.38),transparent_44%)]" />
 
         <motion.div
           animate={{
-            opacity: isActive ? [0.35, 0.75, 0.35] : 0.15,
+            opacity: isActive ? [0.26, 0.56, 0.26] : 0.12,
           }}
-          transition={{ duration: 1.8, repeat: Infinity }}
-          className="absolute inset-[18px] rounded-full border border-white/10"
+          transition={{ duration: 1.7, repeat: Infinity }}
+          className="absolute inset-[20px] rounded-full border border-lime-200/10"
         />
 
         <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/10" />
@@ -364,18 +739,18 @@ function StartIconMicVisualizer({
   micLevel: number;
   onClick: () => void;
 }) {
-  const bars = [0.6, 0.82, 1, 0.72, 0.5];
+  const bars = [0.55, 0.85, 1, 0.75, 0.58];
 
   return (
     <button onClick={onClick} disabled={connecting} className="group relative">
       <motion.div
         animate={{
-          scale: isActive ? 1 + micLevel * 0.35 : 1,
-          opacity: isActive ? 0.4 + micLevel * 0.35 : 0.16,
+          scale: isActive ? 1 + micLevel * 0.55 : 1,
+          opacity: isActive ? 0.3 + micLevel * 0.55 : 0.14,
         }}
-        transition={{ duration: 0.08 }}
-        className={`absolute -inset-4 rounded-full blur-xl ${
-          isMuted ? 'bg-red-500/20' : 'bg-cyan-400/20'
+        transition={{ duration: 0.045 }}
+        className={`absolute -inset-5 rounded-full blur-xl ${
+          isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'
         }`}
       />
 
@@ -384,32 +759,32 @@ function StartIconMicVisualizer({
           isActive
             ? isMuted
               ? 'border-red-500/35'
-              : 'border-cyan-400/45'
-            : 'border-white/10 group-hover:border-amber-500/50'
+              : 'border-lime-300/60'
+            : 'border-white/10 group-hover:border-lime-300/50'
         }`}
       >
         {connecting ? (
-          <Loader2 className="h-7 w-7 animate-spin text-amber-500" />
+          <Loader2 className="h-7 w-7 animate-spin text-lime-300" />
         ) : isActive ? (
-          <div className="flex h-9 items-center gap-1.5">
+          <div className="flex h-11 items-center gap-1.5">
             {bars.map((multiplier, i) => (
               <motion.div
                 key={i}
                 animate={{
-                  height: Math.max(7, micLevel * 42 * multiplier),
-                  opacity: isMuted ? 0.28 : Math.max(0.35, micLevel + 0.25),
+                  height: Math.max(6, micLevel * 48 * multiplier),
+                  opacity: isMuted ? 0.24 : Math.max(0.38, micLevel + 0.22),
                 }}
-                transition={{ duration: 0.06 }}
+                transition={{ duration: 0.035 }}
                 className={`w-1.5 rounded-full ${
                   isMuted
                     ? 'bg-red-500'
-                    : 'bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.65)]'
+                    : 'bg-lime-300 shadow-[0_0_14px_rgba(190,242,100,0.8)]'
                 }`}
               />
             ))}
           </div>
         ) : (
-          <Power className="h-8 w-8 text-amber-500 transition-colors" />
+          <Power className="h-8 w-8 text-lime-300 transition-colors" />
         )}
       </div>
     </button>
@@ -443,14 +818,19 @@ export default function App() {
           const userSnap = await get(userRef);
 
           if (!userSnap.exists()) {
+            const initialSettings = {
+              ...DEFAULT_SETTINGS,
+              userName: u.displayName || DEFAULT_SETTINGS.userName,
+            };
+
             await set(userRef, {
-              displayName: u.displayName || 'Master E',
+              displayName: u.displayName || DEFAULT_SETTINGS.userName,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-              settings: DEFAULT_SETTINGS,
+              settings: initialSettings,
             });
 
-            setSettings(DEFAULT_SETTINGS);
+            setSettings(initialSettings);
           } else {
             const data = userSnap.val();
 
@@ -484,6 +864,11 @@ export default function App() {
       provider.addScope('https://www.googleapis.com/auth/presentations');
       provider.addScope('https://www.googleapis.com/auth/youtube');
       provider.addScope('https://www.googleapis.com/auth/calendar');
+      provider.addScope('https://www.googleapis.com/auth/tasks');
+      provider.addScope('https://www.googleapis.com/auth/contacts.readonly');
+      provider.addScope('https://www.googleapis.com/auth/forms.body');
+      provider.addScope('https://www.googleapis.com/auth/chat.messages');
+      provider.addScope('https://www.googleapis.com/auth/analytics.readonly');
 
       const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       const credential = GoogleAuthProvider.credentialFromResult(result);
@@ -525,7 +910,7 @@ export default function App() {
           className="pointer-events-none absolute inset-0 opacity-[0.03]"
           style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '32px 32px' }}
         />
-        <div className="pointer-events-none absolute left-1/2 top-0 -ml-[400px] h-[800px] w-[800px] rounded-full bg-amber-500/5 blur-[120px]" />
+        <div className="pointer-events-none absolute left-1/2 top-0 -ml-[400px] h-[800px] w-[800px] rounded-full bg-lime-400/5 blur-[120px]" />
 
         <div className="relative z-10 flex w-full max-w-sm flex-col items-center">
           <motion.div
@@ -533,10 +918,10 @@ export default function App() {
             animate={{ scale: 1, opacity: 1 }}
             className="group relative mb-8 h-24 w-24 rounded-[2rem] bg-gradient-to-br from-zinc-800 to-black p-[2px] shadow-2xl"
           >
-            <div className="flex h-full w-full items-center justify-center rounded-[2rem] border border-white/5 bg-[#0A0A0B] transition-colors group-hover:border-amber-500/50">
-              <Volume2 className="h-10 w-10 text-amber-500" />
+            <div className="flex h-full w-full items-center justify-center rounded-[2rem] border border-white/5 bg-[#0A0A0B] transition-colors group-hover:border-lime-300/50">
+              <Volume2 className="h-10 w-10 text-lime-300" />
             </div>
-            <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-black bg-amber-500 shadow-lg shadow-amber-500/40">
+            <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-black bg-lime-300 shadow-lg shadow-lime-300/40">
               <Command className="h-4 w-4 text-black" />
             </div>
           </motion.div>
@@ -550,7 +935,7 @@ export default function App() {
           <div className="w-full rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
             <button
               onClick={handleLogin}
-              className="h-14 w-full rounded-full bg-amber-500 text-sm font-bold uppercase tracking-widest text-black shadow-lg shadow-amber-500/20 transition-all hover:bg-amber-400 active:scale-[0.98]"
+              className="h-14 w-full rounded-full bg-lime-300 text-sm font-bold uppercase tracking-widest text-black shadow-lg shadow-lime-300/20 transition-all hover:bg-lime-200 active:scale-[0.98]"
             >
               Initialize Vep Identity
             </button>
@@ -586,7 +971,6 @@ function MaximusAgent({
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [showSidebar, setShowSidebar] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showChatBox, setShowChatBox] = useState(true);
   const [settings, setSettings] = useState<AgentSettings>({
     ...DEFAULT_SETTINGS,
     ...initialSettings,
@@ -600,11 +984,13 @@ function MaximusAgent({
 
   const transcriptTimeoutRef = useRef<any>(null);
   const isMutedRef = useRef(false);
+  const isActiveRef = useRef(false);
   const micAnimationFrameRef = useRef<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoIntervalRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const modelTranscriptBufferRef = useRef('');
   const userTranscriptBufferRef = useRef('');
@@ -614,6 +1000,10 @@ function MaximusAgent({
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
 
   useEffect(() => {
     let wakeLock: any = null;
@@ -637,7 +1027,7 @@ function MaximusAgent({
     const historyRef = query(
       ref(rtdb, 'users/' + user.uid + '/messages'),
       orderByChild('timestamp'),
-      limitToLast(50)
+      limitToLast(160)
     );
 
     const unsub = onValue(historyRef, (snap) => {
@@ -653,7 +1043,7 @@ function MaximusAgent({
       setHistoryMsgs(rawMsgs);
 
       if (msgs.length > 0) {
-        setHistoryContext('Previous conversation for context memory:\n' + msgs.slice(-20).join('\n'));
+        setHistoryContext('Previous conversation for context memory:\n' + msgs.slice(-36).join('\n'));
       } else {
         setHistoryContext('');
       }
@@ -675,7 +1065,7 @@ function MaximusAgent({
     [settings.selectedVoice]
   );
 
-  const saveMessage = (role: 'user' | 'model', text: string) => {
+  const saveMessage = (role: 'user' | 'model', text: string, extra?: Partial<ChatMessage>) => {
     const clean = text.trim();
     if (!clean) return;
 
@@ -685,6 +1075,7 @@ function MaximusAgent({
         role,
         text: clean,
         timestamp: Date.now(),
+        ...extra,
       });
     } catch (e) {
       console.error(e);
@@ -711,7 +1102,7 @@ function MaximusAgent({
     userTranscriptBufferRef.current = '';
   };
 
-  const updateLiveTranscript = (role: 'user' | 'model', text: string, clearDelay = 4300) => {
+  const updateLiveTranscript = (role: 'user' | 'model', text: string, clearDelay = 3900) => {
     const clean = text.trim();
     if (!clean) return;
 
@@ -730,21 +1121,21 @@ function MaximusAgent({
 
       try {
         if (recorder && typeof recorder.getFrequencies === 'function') {
-          const freqs = recorder.getFrequencies(16) || [];
+          const freqs = recorder.getFrequencies(20) || [];
           const avg = freqs.reduce((sum: number, n: number) => sum + Number(n || 0), 0) / Math.max(freqs.length, 1);
-          nextLevel = Math.min(1, Math.max(0, avg * 1.85));
-        } else if (isActive && !isMutedRef.current) {
-          nextLevel = 0.08 + Math.random() * 0.16;
+          nextLevel = Math.min(1, Math.max(0, avg * 2.4));
+        } else if (isActiveRef.current && !isMutedRef.current) {
+          nextLevel = 0.04;
         }
       } catch (e) {
         nextLevel = 0;
       }
 
-      if (isMutedRef.current || !isActive) {
+      if (isMutedRef.current || !isActiveRef.current) {
         nextLevel = 0;
       }
 
-      setMicLevel(prev => prev + (nextLevel - prev) * 0.38);
+      setMicLevel(prev => prev + (nextLevel - prev) * 0.46);
       micAnimationFrameRef.current = requestAnimationFrame(tick);
     };
 
@@ -785,6 +1176,22 @@ function MaximusAgent({
     });
   };
 
+  const executeGoogleTool = async (toolName: string, args: any) => {
+    const token = localStorage.getItem('googleAccessToken');
+
+    const baseResult = {
+      toolName,
+      args,
+      executedAt: new Date().toISOString(),
+      status: token ? 'received' : 'missing_access_token',
+      note: token
+        ? 'The frontend received this function call. Wire this function to your backend endpoint or direct Google API implementation to make it perform the real action.'
+        : 'No Google access token is available. Ask the user to reconnect permissions.',
+    };
+
+    return baseResult;
+  };
+
   const startSession = async () => {
     if (!aiRef.current) {
       alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
@@ -801,8 +1208,10 @@ function MaximusAgent({
       }
 
       const systemInstruction = [
-        NORMAL_HUMAN_SYSTEM_PROMPT,
-        settings.systemPrompt || '',
+        CONSTANT_HIDDEN_SYSTEM_PROMPT,
+        `User preferred name: ${settings.userName}.`,
+        `Agent visible name: ${settings.agentName}.`,
+        `Agent personality overlay: ${settings.personality}.`,
         BIBLE_PERSONALITY || '',
         `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
         historyContext,
@@ -823,30 +1232,7 @@ function MaximusAgent({
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           tools: [{
-            functionDeclarations: [
-              {
-                name: 'execute_google_service',
-                description: 'Execute a specific task on one of the integrated services. This runs in the background while you continue talking with Master E.',
-                parameters: {
-                  type: Type.OBJECT,
-                  properties: {
-                    serviceName: {
-                      type: Type.STRING,
-                      description: "e.g., 'mail', 'calendar', 'drive', 'video'",
-                    },
-                    action: {
-                      type: Type.STRING,
-                      description: "The task: e.g., 'Draft email to boss', 'Schedule meeting tomorrow at 2pm', 'Summarize latest changes in files'",
-                    },
-                    details: {
-                      type: Type.OBJECT,
-                      description: 'Any extra data like email addresses, search terms, dates, etc.',
-                    },
-                  },
-                  required: ['serviceName', 'action'],
-                },
-              },
-            ],
+            functionDeclarations: GOOGLE_SERVICE_TOOLS,
           }],
         },
         callbacks: {
@@ -862,23 +1248,80 @@ function MaximusAgent({
                 const resps = [];
 
                 for (const c of calls) {
-                  if (c.name === 'execute_google_service') {
-                    const { serviceName, action } = c.args as any;
-                    const tid = Math.random().toString(36).substring(7);
+                  const toolName = c.name || 'unknown_tool';
+                  const args = c.args as any;
+                  const tid = Math.random().toString(36).substring(7);
+                  const action = JSON.stringify(args || {}, null, 0);
 
-                    setTasks(p => [...p, { id: tid, serviceName, action, status: 'processing' }]);
+                  setTasks(p => [...p, {
+                    id: tid,
+                    serviceName: toolName,
+                    action,
+                    status: 'processing',
+                  }]);
 
-                    setTimeout(() => {
-                      setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: 'Failed: API not wired up yet.' } : t));
-                      setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 15000);
-                    }, 5000 + Math.random() * 8000);
+                  try {
+                    const result = await executeGoogleTool(toolName, args);
+                    const download = makeDownloadFile(result, toolName);
+
+                    setTasks(p => p.map(t => t.id === tid ? {
+                      ...t,
+                      status: result.status === 'missing_access_token' ? 'failed' : 'completed',
+                      result: result.note,
+                      ...download,
+                    } : t));
+
+                    saveMessage(
+                      'model',
+                      `Tool result from ${toolName}: ${result.note}`,
+                      {
+                        toolName,
+                        toolResult: result,
+                        ...download,
+                      }
+                    );
+
+                    setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 16000);
 
                     resps.push({
                       id: c.id,
-                      name: c.name,
+                      name: toolName,
                       response: {
-                        result: `Action '${action}' requested on ${serviceName}. The backend API to execute this is not yet implemented. Inform the user you cannot truly do this right now.`,
+                        result,
+                        downloadFilename: download.downloadFilename,
                       },
+                    });
+                  } catch (err: any) {
+                    const result = {
+                      toolName,
+                      args,
+                      status: 'failed',
+                      error: String(err?.message || err),
+                      executedAt: new Date().toISOString(),
+                    };
+                    const download = makeDownloadFile(result, `${toolName}-error`);
+
+                    setTasks(p => p.map(t => t.id === tid ? {
+                      ...t,
+                      status: 'failed',
+                      result: result.error,
+                      ...download,
+                    } : t));
+
+                    saveMessage(
+                      'model',
+                      `Tool failed from ${toolName}: ${result.error}`,
+                      {
+                        toolName,
+                        toolResult: result,
+                        ...download,
+                      }
+                    );
+
+                    resps.push({
+                      id: c.id,
+                      name: toolName,
+                      response: result,
                     });
                   }
                 }
@@ -902,13 +1345,13 @@ function MaximusAgent({
               if (serverContent.inputTranscription?.text) {
                 const inputText = serverContent.inputTranscription.text;
                 userTranscriptBufferRef.current = inputText.trim();
-                updateLiveTranscript('user', userTranscriptBufferRef.current, 3600);
+                updateLiveTranscript('user', userTranscriptBufferRef.current, 3200);
               }
 
               if (serverContent.outputTranscription?.text) {
                 const outputText = serverContent.outputTranscription.text;
                 modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + outputText).trim();
-                updateLiveTranscript('model', modelTranscriptBufferRef.current, 4300);
+                updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
               }
 
               const parts = serverContent.modelTurn?.parts;
@@ -918,12 +1361,12 @@ function MaximusAgent({
                   if (part.inlineData?.data) {
                     audioStreamerRef.current?.addPCM16(part.inlineData.data);
                     setIsAgentSpeaking(true);
-                    setTimeout(() => setIsAgentSpeaking(false), 800);
+                    setTimeout(() => setIsAgentSpeaking(false), 620);
                   }
 
                   if (part.text?.trim()) {
                     modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + ' ' + part.text).trim();
-                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 4300);
+                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
                   }
                 }
               }
@@ -967,7 +1410,7 @@ function MaximusAgent({
 
             if (visibleText) {
               userTranscriptBufferRef.current = visibleText;
-              updateLiveTranscript('user', visibleText, 3600);
+              updateLiveTranscript('user', visibleText, 3200);
             }
 
             if (finalText.trim()) {
@@ -978,7 +1421,7 @@ function MaximusAgent({
           };
 
           recognitionRef.current.onend = () => {
-            if (sessionRef.current && isActive) {
+            if (sessionRef.current && isActiveRef.current) {
               try {
                 recognitionRef.current?.start();
               } catch (e) {}
@@ -997,11 +1440,12 @@ function MaximusAgent({
       await audioRecorderRef.current.start();
 
       setIsActive(true);
+      isActiveRef.current = true;
       setConnecting(false);
       startMicVisualizer();
 
       setTimeout(() => {
-        sendTextToLive('System connected. Master E has arrived. Respond normally, briefly, and without sounding like a generic assistant.');
+        sendTextToLive(`${settings.userName} is here. Start like you are already present in front of them. Say something like: Yes, I'm here. I'm listening.`);
       }, 500);
     } catch (err) {
       console.error('Session start failed:', err);
@@ -1014,13 +1458,21 @@ function MaximusAgent({
     if (!isVideoEnabled) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: 320, height: 240 },
+          video: { facingMode, width: 1280, height: 720 },
         });
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          await videoRef.current.play();
         }
+
+        setIsVideoEnabled(true);
+
+        setTimeout(() => {
+          sendTextToLive(
+            `${settings.userName} just opened the camera. Notice it in a normal human way, like you looked up and saw the view. Do not say you can assist. Say something like: Oh, yeah, I see it now. Then briefly describe what you can see.`
+          );
+        }, 300);
 
         videoIntervalRef.current = setInterval(() => {
           if (!videoRef.current || !canvasRef.current || !sessionRef.current) return;
@@ -1034,16 +1486,14 @@ function MaximusAgent({
             c.height = v.videoHeight;
             ctx.drawImage(v, 0, 0, c.width, c.height);
 
-            const base64Url = c.toDataURL('image/jpeg', 0.5);
+            const base64Url = c.toDataURL('image/jpeg', 0.55);
             const base64Data = base64Url.split(',')[1];
 
             if (base64Data) {
               sendVideoToLive(base64Data);
             }
           }
-        }, 1000);
-
-        setIsVideoEnabled(true);
+        }, 900);
       } catch (e) {
         console.error('Camera error:', e);
       }
@@ -1056,6 +1506,10 @@ function MaximusAgent({
 
       if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
       setIsVideoEnabled(false);
+
+      setTimeout(() => {
+        sendTextToLive(`${settings.userName} closed the camera. Acknowledge it normally and keep the conversation going.`);
+      }, 150);
     }
   };
 
@@ -1074,7 +1528,7 @@ function MaximusAgent({
         const base64Data = base64Url.split(',')[1];
 
         if (base64Data) {
-          sendTextToLive('Master E just captured this photo for you. Pay close attention to it.');
+          sendTextToLive(`${settings.userName} captured this photo. Look at it and respond normally, briefly, and clearly.`);
           sendVideoToLive(base64Data);
           saveMessage('user', '[Sent Photo]');
         }
@@ -1094,16 +1548,36 @@ function MaximusAgent({
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: newMode, width: 320, height: 240 },
+          video: { facingMode: newMode, width: 1280, height: 720 },
         });
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(e => console.error('Video play err', e));
         }
+
+        sendTextToLive(`${settings.userName} switched the camera. Notice the new view normally and describe only what stands out.`);
       } catch (e) {
         console.error('Camera switch error:', e);
       }
+    }
+  };
+
+  const handleAttachFile = async (file: File) => {
+    const safeName = file.name || 'attached file';
+    const fileType = file.type || 'unknown';
+
+    saveMessage('user', `[Attached file: ${safeName}]`, {
+      fileName: safeName,
+      fileType,
+    });
+
+    updateLiveTranscript('user', `Attached file: ${safeName}`, 3000);
+
+    if (sessionRef.current) {
+      sendTextToLive(
+        `${settings.userName} attached a file named "${safeName}" with type "${fileType}". Acknowledge it normally. If you cannot actually parse the file contents from the current runtime, say that clearly and ask for readable text or backend parsing.`
+      );
     }
   };
 
@@ -1127,6 +1601,7 @@ function MaximusAgent({
     recognitionRef.current = null;
     modelTranscriptBufferRef.current = '';
     userTranscriptBufferRef.current = '';
+    isActiveRef.current = false;
 
     setIsVideoEnabled(false);
     setIsActive(false);
@@ -1139,6 +1614,7 @@ function MaximusAgent({
     const userRef = ref(rtdb, 'users/' + user.uid);
 
     await update(userRef, {
+      displayName: settings.userName,
       settings,
       updatedAt: serverTimestamp(),
     });
@@ -1148,34 +1624,96 @@ function MaximusAgent({
 
   return (
     <div
-      className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-amber-500/30"
+      className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-lime-300/30"
       style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
     >
-      <div className={`absolute inset-0 z-0 bg-black transition-opacity duration-700 ${isVideoEnabled ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-        <video ref={videoRef} playsInline muted className={`h-full w-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} />
-        <div className="absolute left-8 top-24 flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 backdrop-blur-md">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
-          <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-300">V-Stream Live</span>
-        </div>
-      </div>
-
       <canvas ref={canvasRef} className="hidden" />
 
-      <header className="z-50 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 px-8 py-6 backdrop-blur-md">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleAttachFile(file);
+          e.target.value = '';
+        }}
+      />
+
+      <AnimatePresence>
+        {isVideoEnabled && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 bg-black"
+          >
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className={`h-full w-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+            />
+
+            <div className="absolute left-6 top-6 flex items-center gap-2 rounded-full border border-lime-300/20 bg-black/60 px-3 py-1.5 backdrop-blur-md">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-lime-300 shadow-[0_0_8px_rgba(190,242,100,0.9)]" />
+              <span className="text-[9px] font-bold uppercase tracking-widest text-lime-200">Camera Live</span>
+            </div>
+
+            <div className="pointer-events-auto absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-4">
+              <button
+                onClick={switchCamera}
+                className="rounded-full border border-white/10 bg-black/60 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-200 backdrop-blur-xl transition hover:border-lime-300/40 hover:text-lime-200"
+              >
+                Flip Camera
+              </button>
+
+              <button
+                onClick={capturePhoto}
+                className="flex items-center gap-2 rounded-full border border-lime-300/30 bg-lime-300/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 backdrop-blur-xl transition hover:bg-lime-300/25"
+              >
+                <Camera className="h-4 w-4" /> Capture
+              </button>
+
+              <button
+                onClick={toggleVideo}
+                className="rounded-full border border-red-500/30 bg-red-500/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-red-300 backdrop-blur-xl transition hover:bg-red-500/25"
+              >
+                Close Camera
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {currentTranscript && (
+                <motion.div
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  className="pointer-events-none absolute left-1/2 top-24 z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+                >
+                  <OneLineStreamingTranscript
+                    role={currentTranscript.role}
+                    text={currentTranscript.text}
+                    name={settings.agentName}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <header className={`z-50 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 px-8 py-6 backdrop-blur-md ${isVideoEnabled ? 'pointer-events-none opacity-0' : ''}`}>
         <div className="flex items-center gap-4">
           <button onClick={() => setShowSidebar(true)} className="-ml-2 rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
             <Menu className="h-5 w-5" />
-          </button>
-
-          <button onClick={() => setShowChatBox(p => !p)} className="rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
-            <MessageCircle className="h-5 w-5" />
           </button>
         </div>
 
         <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
           {isActive && (
             <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${
-              isAgentSpeaking ? 'border-amber-500/50 bg-amber-500/10 text-amber-500' : 'border-cyan-400/50 bg-cyan-400/10 text-cyan-300'
+              isAgentSpeaking ? 'border-lime-300/50 bg-lime-300/10 text-lime-300' : 'border-sky-400/50 bg-sky-400/10 text-sky-300'
             }`}>
               {isAgentSpeaking ? 'Speaking...' : 'Listening...'}
             </span>
@@ -1185,196 +1723,146 @@ function MaximusAgent({
         <div className="flex items-center gap-6">
           <div className="mr-2 hidden flex-col items-end sm:flex">
             <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Voice</span>
-            <span className="flex items-center gap-1.5 font-mono text-[10px] text-amber-500">
+            <span className="flex items-center gap-1.5 font-mono text-[10px] text-lime-300">
               {selectedVoiceMeta.alias}
             </span>
           </div>
 
-          <button onClick={() => setShowProfile(true)} className="h-10 w-10 overflow-hidden rounded-full border border-white/10 transition-all hover:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/50">
+          <button onClick={() => setShowProfile(true)} className="h-10 w-10 overflow-hidden rounded-full border border-white/10 transition-all hover:border-lime-300/50 focus:outline-none focus:ring-2 focus:ring-lime-300/50">
             {settings.avatarUrl || user.photoURL ? (
               <img src={settings.avatarUrl || user.photoURL || ''} alt="Profile" className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-zinc-800 font-bold">{user.displayName?.[0] || 'U'}</div>
+              <div className="flex h-full w-full items-center justify-center bg-zinc-800 font-bold">{settings.userName?.[0] || 'U'}</div>
             )}
           </button>
         </div>
       </header>
 
-      <main className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-start p-8 pt-12">
-        <div className="pointer-events-none absolute inset-0 z-[-1] -translate-y-20 overflow-hidden">
-          <div className="absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.02]" />
-          <div className="absolute left-1/2 top-1/2 h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.01]" />
-          <div className="absolute bottom-0 left-1/2 top-0 w-px bg-gradient-to-b from-transparent via-white/[0.03] to-transparent" />
-          <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-white/[0.03] to-transparent" />
-        </div>
-
-        <ChatGPTStyleOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} />
-
-        <AnimatePresence>
-          {currentTranscript && (
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              className="absolute left-1/2 top-[330px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
-            >
-              <OneLineStreamingTranscript
-                role={currentTranscript.role}
-                text={currentTranscript.text}
-                name={settings.personaName}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end">
-          <div className="mb-4 w-full max-w-md space-y-2 px-6">
-            <AnimatePresence>
-              {tasks.map(task => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, x: -50, scale: 0.9 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
-                  className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-amber-500/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl"
-                >
-                  <div className="relative shrink-0">
-                    {task.status === 'processing' ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
-                    ) : (
-                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
-                        <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex items-center justify-between">
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-amber-500">{task.serviceName}</span>
-                      <span className="font-mono text-[8px] text-zinc-600">{task.status.toUpperCase()}</span>
-                    </div>
-                    <p className="truncate text-xs text-zinc-100">{task.action}</p>
-                    {task.result && (
-                      <motion.p
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="mt-1 text-[10px] leading-tight text-zinc-400"
-                      >
-                        {task.result}
-                      </motion.p>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+      {!isVideoEnabled && (
+        <main className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-start p-8 pt-12">
+          <div className="pointer-events-none absolute inset-0 z-[-1] -translate-y-20 overflow-hidden">
+            <div className="absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.02]" />
+            <div className="absolute left-1/2 top-1/2 h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.01]" />
+            <div className="absolute bottom-0 left-1/2 top-0 w-px bg-gradient-to-b from-transparent via-lime-300/[0.04] to-transparent" />
+            <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-lime-300/[0.04] to-transparent" />
           </div>
 
+          <LimeVoiceOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} />
+
           <AnimatePresence>
-            {showChatBox && (
+            {currentTranscript && (
               <motion.div
-                initial={{ opacity: 0, y: 18 }}
+                initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 18 }}
-                className="mb-5 w-full max-w-3xl px-4"
+                exit={{ opacity: 0, y: -12 }}
+                className="absolute left-1/2 top-[330px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
               >
-                <div className="pointer-events-auto overflow-hidden rounded-[2rem] border border-white/10 bg-black/45 shadow-2xl backdrop-blur-xl">
-                  <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-500">Live Conversation</p>
-                      <p className="mt-0.5 text-[10px] text-zinc-600">Realtime transcript saved in Firebase RTDB</p>
-                    </div>
-                    <span className="text-[10px] uppercase tracking-widest text-zinc-500">
-                      {historyMsgs.length} saved
-                    </span>
-                  </div>
-
-                  <div className="max-h-44 space-y-3 overflow-y-auto p-4">
-                    {historyMsgs.slice(-6).map((msg, i) => (
-                      <div key={`${msg.timestamp}-${i}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] rounded-2xl border px-4 py-2 text-sm leading-relaxed ${
-                          msg.role === 'user'
-                            ? 'rounded-tr-sm border-cyan-400/15 bg-cyan-400/5 text-cyan-50'
-                            : 'rounded-tl-sm border-amber-500/20 bg-amber-500/10 text-amber-50'
-                        }`}>
-                          <div className={`mb-1 text-[8px] uppercase tracking-widest ${msg.role === 'user' ? 'text-cyan-300' : 'text-amber-500'}`}>
-                            {msg.role === 'user' ? 'You' : settings.personaName}
-                          </div>
-                          {msg.text}
-                        </div>
-                      </div>
-                    ))}
-
-                    {historyMsgs.length === 0 && (
-                      <div className="py-8 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                        No live transcript yet
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <OneLineStreamingTranscript
+                  role={currentTranscript.role}
+                  text={currentTranscript.text}
+                  name={settings.agentName}
+                />
               </motion.div>
             )}
           </AnimatePresence>
 
-          <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
-            <div className="flex items-center justify-center gap-8">
-              <button
-                onClick={() => setIsMuted(p => !p)}
-                className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
-                  isMuted ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
-                }`}
-              >
-                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </button>
+          <div className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end">
+            <div className="mb-4 w-full max-w-md space-y-2 px-6">
+              <AnimatePresence>
+                {tasks.map(task => (
+                  <motion.div
+                    key={task.id}
+                    layout
+                    initial={{ opacity: 0, x: -50, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
+                    className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-lime-300/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl"
+                  >
+                    <div className="relative shrink-0">
+                      {task.status === 'processing' ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-lime-300" />
+                      ) : task.status === 'completed' ? (
+                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
+                          <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
+                        </div>
+                      ) : (
+                        <div className="h-4 w-4 rounded-full bg-red-500" />
+                      )}
+                    </div>
 
-              {!isActive ? (
-                <StartIconMicVisualizer
-                  isActive={false}
-                  connecting={connecting}
-                  isMuted={isMuted}
-                  micLevel={0}
-                  onClick={startSession}
-                />
-              ) : (
-                <StartIconMicVisualizer
-                  isActive={true}
-                  connecting={connecting}
-                  isMuted={isMuted}
-                  micLevel={micLevel}
-                  onClick={stopSession}
-                />
-              )}
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex items-center justify-between">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-lime-300">{task.serviceName}</span>
+                        <span className="font-mono text-[8px] text-zinc-600">{task.status.toUpperCase()}</span>
+                      </div>
+                      <p className="truncate text-xs text-zinc-100">{task.action}</p>
+                      {task.result && (
+                        <motion.p
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-1 text-[10px] leading-tight text-zinc-400"
+                        >
+                          {task.result}
+                        </motion.p>
+                      )}
+                    </div>
 
-              <button
-                onClick={() => toggleVideo()}
-                className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
-                  isVideoEnabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
-                }`}
-              >
-                {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              </button>
+                    {task.downloadData && task.downloadFilename && (
+                      <a
+                        href={task.downloadData}
+                        download={task.downloadFilename}
+                        className="pointer-events-auto rounded-lg border border-lime-300/20 p-2 text-lime-200 hover:bg-lime-300/10"
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
 
-            <AnimatePresence>
-              {isVideoEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="flex items-center justify-center gap-4"
+            <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
+              <div className="flex items-center justify-center gap-8">
+                <button
+                  onClick={() => setIsMuted(p => !p)}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                    isMuted ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
+                  }`}
                 >
-                  <button onClick={switchCamera} className="flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-300 backdrop-blur-md transition-all hover:border-white/30 hover:text-white">
-                    Flip Camera
-                  </button>
-                  <button onClick={capturePhoto} className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-emerald-500 backdrop-blur-md transition-all hover:bg-emerald-500/30">
-                    <Camera className="h-3 w-3" /> Capture
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                </button>
+
+                {!isActive ? (
+                  <StartIconMicVisualizer
+                    isActive={false}
+                    connecting={connecting}
+                    isMuted={isMuted}
+                    micLevel={0}
+                    onClick={startSession}
+                  />
+                ) : (
+                  <StartIconMicVisualizer
+                    isActive={true}
+                    connecting={connecting}
+                    isMuted={isMuted}
+                    micLevel={micLevel}
+                    onClick={stopSession}
+                  />
+                )}
+
+                <button
+                  onClick={() => toggleVideo()}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                    isVideoEnabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
+                  }`}
+                >
+                  {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      )}
 
       <AnimatePresence>
         {showSidebar && (
@@ -1386,34 +1874,69 @@ function MaximusAgent({
             />
             <motion.div
               initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed bottom-0 left-0 top-0 z-[101] flex w-80 flex-col border-r border-white/10 bg-[#0A0A0B] shadow-2xl"
+              className="fixed bottom-0 left-0 top-0 z-[101] flex w-96 max-w-[88vw] flex-col border-r border-white/10 bg-[#0A0A0B] shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-white/10 p-6">
                 <div>
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-white">Memory Log</h2>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Firebase RTDB</p>
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-white">History</h2>
+                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Firebase RTDB conversations</p>
                 </div>
                 <button onClick={() => setShowSidebar(false)} className="-mr-2 rounded-xl p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
+              <div className="border-b border-white/10 p-4">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-lime-300/20 bg-lime-300/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15"
+                >
+                  <Paperclip className="h-4 w-4" />
+                  Attach File
+                </button>
+              </div>
+
               <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {historyMsgs.map((msg, i) => (
                   <div key={`${msg.timestamp}-${i}`} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">{msg.role === 'user' ? 'You' : settings.personaName}</span>
-                    <div className={`max-w-[90%] rounded-2xl p-3 text-xs leading-relaxed ${
+                    <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">{msg.role === 'user' ? settings.userName : settings.agentName}</span>
+                    <div className={`max-w-[92%] rounded-2xl p-3 text-xs leading-relaxed ${
                       msg.role === 'user'
-                        ? 'rounded-tr-sm border border-cyan-400/20 bg-cyan-400/10 text-cyan-100'
-                        : 'rounded-tl-sm border border-white/5 bg-white/5 text-zinc-300'
+                        ? 'rounded-tr-sm border border-sky-400/20 bg-sky-400/10 text-sky-100'
+                        : 'rounded-tl-sm border border-lime-300/10 bg-white/5 text-zinc-300'
                     }`}>
+                      {msg.fileName && (
+                        <div className="mb-2 flex items-center gap-2 rounded-xl bg-black/30 px-2 py-1 text-[10px] text-lime-200">
+                          <Upload className="h-3 w-3" />
+                          {msg.fileName}
+                        </div>
+                      )}
+
+                      {msg.toolName && (
+                        <div className="mb-2 flex items-center gap-2 rounded-xl bg-lime-300/10 px-2 py-1 text-[10px] text-lime-200">
+                          <FileText className="h-3 w-3" />
+                          Tool Output: {msg.toolName}
+                        </div>
+                      )}
+
                       {msg.text}
+
+                      {msg.downloadData && msg.downloadFilename && (
+                        <a
+                          href={msg.downloadData}
+                          download={msg.downloadFilename}
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-lime-300/20 bg-lime-300/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download Result
+                        </a>
+                      )}
                     </div>
                   </div>
                 ))}
 
                 {historyMsgs.length === 0 && (
-                  <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">No Memory Buffers</div>
+                  <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">No History Yet</div>
                 )}
               </div>
             </motion.div>
@@ -1429,8 +1952,8 @@ function MaximusAgent({
           >
             <div className="sticky top-0 z-10 mx-auto flex w-full max-w-2xl items-center justify-between border-b border-white/10 bg-[#050505]/80 p-6 backdrop-blur-xl">
               <div>
-                <h2 className="text-sm font-bold uppercase tracking-widest text-white">Profile</h2>
-                <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-600">Voice, persona, and transcript settings</p>
+                <h2 className="text-sm font-bold uppercase tracking-widest text-white">Settings</h2>
+                <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-600">Names, voice, and visible personality</p>
               </div>
 
               <div className="flex gap-2">
@@ -1439,7 +1962,7 @@ function MaximusAgent({
                 </button>
                 <button
                   onClick={persistSettings}
-                  className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-amber-400 active:scale-95"
+                  className="flex items-center gap-2 rounded-xl bg-lime-300 px-4 py-2 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-lime-200 active:scale-95"
                 >
                   <Save className="h-4 w-4" /> Save
                 </button>
@@ -1455,7 +1978,7 @@ function MaximusAgent({
                   {settings.avatarUrl || user.photoURL ? (
                     <img src={settings.avatarUrl || user.photoURL || ''} alt="Avatar" className="h-full w-full object-cover transition-opacity group-hover:opacity-50" />
                   ) : (
-                    <div className="text-4xl font-bold text-zinc-700">{user.displayName?.[0] || 'U'}</div>
+                    <div className="text-4xl font-bold text-zinc-700">{settings.userName?.[0] || 'U'}</div>
                   )}
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
                     <Camera className="h-8 w-8 text-white drop-shadow-md" />
@@ -1501,12 +2024,29 @@ function MaximusAgent({
 
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Persona Designation</label>
+                  <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    <UserRound className="h-3.5 w-3.5" />
+                    How to call you?
+                  </label>
                   <input
                     type="text"
-                    value={settings.personaName}
-                    onChange={(e) => setSettings(s => ({ ...s, personaName: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
+                    value={settings.userName}
+                    onChange={(e) => setSettings(s => ({ ...s, userName: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                    placeholder="e.g. Master E"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    <Bot className="h-3.5 w-3.5" />
+                    Vep Agent Name
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.agentName}
+                    onChange={(e) => setSettings(s => ({ ...s, agentName: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
                     placeholder="e.g. Vep"
                   />
                 </div>
@@ -1516,7 +2056,7 @@ function MaximusAgent({
                   <select
                     value={settings.selectedVoice}
                     onChange={(e) => setSettings(s => ({ ...s, selectedVoice: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-sm text-white outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-sm text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
                   >
                     {GEMINI_LIVE_VOICE_OPTIONS.map(v => (
                       <option key={v.id} value={v.id}>
@@ -1530,13 +2070,16 @@ function MaximusAgent({
                 </div>
 
                 <div className="flex flex-1 flex-col space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">System Directives</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Default Personality of the Agent</label>
                   <textarea
-                    value={settings.systemPrompt}
-                    onChange={(e) => setSettings(s => ({ ...s, systemPrompt: e.target.value }))}
-                    className="min-h-[340px] w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0B] p-4 font-mono text-xs leading-relaxed text-zinc-300 outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
-                    placeholder="Normal human voice prompt..."
+                    value={settings.personality}
+                    onChange={(e) => setSettings(s => ({ ...s, personality: e.target.value }))}
+                    className="min-h-[340px] w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0B] p-4 font-mono text-xs leading-relaxed text-zinc-300 outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                    placeholder="Describe how the agent should behave..."
                   />
+                  <p className="text-[10px] leading-relaxed text-zinc-600">
+                    The constant system prompt stays hidden and is always applied behind this personality.
+                  </p>
                 </div>
               </div>
             </div>
