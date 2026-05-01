@@ -203,6 +203,7 @@ const LIVE_RUNTIME = {
   audioRecorder: null as AudioRecorder | null,
   audioStreamer: null as AudioStreamer | null,
   isClosing: false,
+  isConnecting: false,
   visStream: null as MediaStream | null,
   visCtx: null as AudioContext | null,
   visAnalyser: null as AnalyserNode | null,
@@ -2849,6 +2850,10 @@ function BeatriceAgent({
       return true;
     }
 
+    // Prevent duplicate connections if already connecting
+    if (LIVE_RUNTIME.isConnecting) return false;
+    LIVE_RUNTIME.isConnecting = true;
+
     const startPromise = (async () => {
       if (!aiRef.current) {
         alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
@@ -3252,6 +3257,8 @@ function BeatriceAgent({
         }
 
         return false;
+      } finally {
+        LIVE_RUNTIME.isConnecting = false;
       }
     })();
 
