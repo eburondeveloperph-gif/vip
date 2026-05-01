@@ -2022,7 +2022,9 @@ function BeatriceAgent({
   // transcript glues together (e.g. "Yes, I'mI'm here, Meneer Jo").
   const interruptAgentSpeech = () => {
     try { audioStreamerRef.current?.stop(); } catch (e) {}
+    try { LIVE_RUNTIME.audioStreamer?.stop(); } catch (e) {}
     setIsAgentSpeaking(false);
+    setLiveModelText('');
     modelTranscriptBufferRef.current = '';
   };
 
