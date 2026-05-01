@@ -2954,10 +2954,36 @@ function BeatriceAgent({
         // Combine bundled jo-files (always present) with any runtime-uploaded
         // user knowledge from Settings. Each doc is wrapped in a clear header
         // so the agent can cite by title when answering Jo's questions.
-        const knowledgeSections = [
-          ...JO_KNOWLEDGE_FILES.map(f => ({ title: f.title, filename: f.filename, content: f.content, origin: 'bundled' as const })),
+        //
+        // NOTE: the bundled BP_FR is a translation of BP_EN (same content), so
+        // we drop it to keep the system prompt under Gemini Live's effective
+        // context budget. Each doc is also hard-capped per-doc + total — at
+        // ~110KB raw the prompt was choking the live model into silence.
+        const MAX_PER_DOC_CHARS = 14000;
+        const MAX_TOTAL_KB_CHARS = 42000;
+        const SKIP_BUNDLED_FILENAMES = new Set([
+          'Eburon.ai BP v4.2026 fr.docx', // French translation of the EN BP
+        ]);
+
+        const rawKnowledge = [
+          ...JO_KNOWLEDGE_FILES
+            .filter(f => !SKIP_BUNDLED_FILENAMES.has(f.filename))
+            .map(f => ({ title: f.title, filename: f.filename, content: f.content, origin: 'bundled' as const })),
           ...userKnowledgeDocs.map(d => ({ title: d.title, filename: d.filename, content: d.content, origin: 'user' as const })),
         ];
+
+        let totalSoFar = 0;
+        const knowledgeSections = [];
+        for (const s of rawKnowledge) {
+          const remainingBudget = MAX_TOTAL_KB_CHARS - totalSoFar;
+          if (remainingBudget < 1500) break; // not enough room for another useful chunk
+          const chunkBudget = Math.min(MAX_PER_DOC_CHARS, remainingBudget);
+          const content = s.content.length > chunkBudget
+            ? s.content.slice(0, chunkBudget) + '\n[truncated for context — full text available on request]'
+            : s.content;
+          knowledgeSections.push({ ...s, content });
+          totalSoFar += content.length;
+        }
 
         const knowledgeBaseBlock = knowledgeSections.length === 0
           ? ''
