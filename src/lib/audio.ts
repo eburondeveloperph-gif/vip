@@ -77,16 +77,30 @@ export class AudioRecorder {
     this.onData = onData;
   }
 
+  private silentSink: GainNode | null = null;
+
   async start() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: 16000
+      sampleRate: 16000,
     });
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // Browser-side echo cancellation + noise suppression + AGC. Without these
+    // the agent hears its own voice through the mic, the model thinks the user
+    // is talking, and you get feedback / phantom interruptions.
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    });
+
     const source = this.audioContext.createMediaStreamSource(this.stream);
-    
+
     this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
     this.processor.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
@@ -107,18 +121,29 @@ export class AudioRecorder {
       }
       this.onData(btoa(binary));
     };
-    
+
     source.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
+
+    // ScriptProcessorNode only fires onaudioprocess when connected to a
+    // destination. Route through a muted gain node so the mic capture path
+    // never reaches the actual speaker — that was the source of the echo.
+    this.silentSink = this.audioContext.createGain();
+    this.silentSink.gain.value = 0;
+    this.processor.connect(this.silentSink);
+    this.silentSink.connect(this.audioContext.destination);
   }
 
   stop() {
-    if (this.processor && this.audioContext) {
-      this.processor.disconnect();
-    }
+    try { this.processor?.disconnect(); } catch (e) {}
+    try { this.silentSink?.disconnect(); } catch (e) {}
+    this.processor = null;
+    this.silentSink = null;
+
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
     }
-    this.audioContext?.close();
+    try { this.audioContext?.close(); } catch (e) {}
+    this.audioContext = null;
   }
 }
