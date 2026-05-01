@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+// ---------- Type definitions ----------
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
@@ -90,6 +91,7 @@ interface AgentSettings {
   selectedVoice: string;
 }
 
+// ---------- Constants ----------
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 const EBURON_LOGO_URL = 'https://eburon.ai/icon-eburon.svg';
 const PRODUCT_BRAND = 'VEP';
@@ -560,6 +562,7 @@ const GOOGLE_SERVICE_TOOLS = [
   },
 ];
 
+// ---------- Utility functions ----------
 function safeJsonStringify(value: any) {
   try {
     return JSON.stringify(value, null, 2);
@@ -652,21 +655,34 @@ function makeBlobDownloadData(blob: Blob): Promise<string> {
   });
 }
 
-function base64UrlEncode(value: string) {
-  return btoa(unescape(encodeURIComponent(value)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+// --- Improved base64 / MIME helpers (fixes email encoding) ---
+function stringToBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach(byte => binary += String.fromCharCode(byte));
+  return btoa(binary);
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer) {
+function splitBase64ForMime(base64: string): string {
+  const chunkSize = 76;
+  const chunks: string[] = [];
+  for (let i = 0; i < base64.length; i += chunkSize) {
+    chunks.push(base64.substring(i, i + chunkSize));
+  }
+  return chunks.join('\r\n');
+}
+
+function base64UrlEncode(value: string) {
+  const base64 = stringToBase64(value);
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
-
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-
   return btoa(binary);
 }
 
@@ -689,6 +705,8 @@ function buildEmailRaw({
     base64Content: string;
   };
 }) {
+  const attachmentBase64Lines = attachment ? splitBase64ForMime(attachment.base64Content) : '';
+
   const headers = [
     `To: ${to}`,
     cc ? `Cc: ${cc}` : '',
@@ -704,12 +722,10 @@ function buildEmailRaw({
       '',
       body,
     ].join('\r\n');
-
     return base64UrlEncode(raw);
   }
 
   const boundary = `boundary_${Date.now()}`;
-
   const raw = [
     ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -724,7 +740,7 @@ function buildEmailRaw({
     'Content-Transfer-Encoding: base64',
     `Content-Disposition: attachment; filename="${attachment.filename}"`,
     '',
-    attachment.base64Content,
+    attachmentBase64Lines,
     '',
     `--${boundary}--`,
   ].join('\r\n');
@@ -822,6 +838,7 @@ Note:
 This draft is generated for convenience and should be reviewed by a qualified legal professional before signing.`;
 }
 
+// ---------- Visual components ----------
 function OneLineStreamingTranscript({
   text,
   role,
@@ -1140,6 +1157,7 @@ function StartIconMicVisualizer({
   );
 }
 
+// ---------- App component (auth + main agent) ----------
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1531,6 +1549,7 @@ export default function App() {
   return <BeatriceAgent user={user} onLogout={handleLogout} initialSettings={settings} />;
 }
 
+// ---------- Main agent component ----------
 function BeatriceAgent({
   user,
   onLogout,
@@ -1822,6 +1841,7 @@ function BeatriceAgent({
     setChatInput('');
   };
 
+  // ---------- Google API helpers ----------
   const googleFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('googleAccessToken');
 
@@ -1959,6 +1979,7 @@ function BeatriceAgent({
     });
   };
 
+  // ---------- Tool execution ----------
   const executeGoogleTool = async (toolName: string, args: any) => {
     const executedAt = new Date().toISOString();
 
@@ -1999,7 +2020,7 @@ function BeatriceAgent({
             attachment: {
               filename: htmlFile.htmlPreviewFilename,
               mimeType: 'text/html',
-              base64Content: btoa(unescape(encodeURIComponent(htmlFile.html))),
+              base64Content: stringToBase64(htmlFile.html),
             },
           });
         }
@@ -2566,7 +2587,11 @@ function BeatriceAgent({
     }
   };
 
+  // ---------- Session control (single audio, no overlap) ----------
   const startSession = async () => {
+    if (connecting || isActiveRef.current) return;
+    stopSession(); // ensure clean state
+
     if (!aiRef.current) {
       alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
       return;
@@ -2846,6 +2871,36 @@ function BeatriceAgent({
     }
   };
 
+  const stopSession = () => {
+    try { recognitionRef.current?.stop(); } catch (e) {}
+    try { audioRecorderRef.current?.stop(); } catch (e) {}
+    try { audioStreamerRef.current?.stop(); } catch (e) {}
+    try { sessionRef.current?.close(); } catch (e) {}
+
+    stopMicVisualizer();
+
+    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
+    }
+
+    sessionRef.current = null;
+    recognitionRef.current = null;
+    modelTranscriptBufferRef.current = '';
+    userTranscriptBufferRef.current = '';
+    isActiveRef.current = false;
+
+    setIsVideoEnabled(false);
+    setIsActive(false);
+    setConnecting(false);
+    setIsAgentSpeaking(false);
+    setCurrentTranscript(null);
+  };
+
+  // ---------- Camera / UI handlers ----------
   const toggleVideo = async () => {
     if (!isVideoEnabled) {
       try {
@@ -2973,35 +3028,6 @@ function BeatriceAgent({
     }
   };
 
-  const stopSession = () => {
-    try { recognitionRef.current?.stop(); } catch (e) {}
-    try { audioRecorderRef.current?.stop(); } catch (e) {}
-    try { audioStreamerRef.current?.stop(); } catch (e) {}
-    try { sessionRef.current?.close(); } catch (e) {}
-
-    stopMicVisualizer();
-
-    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
-
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((t) => t.stop());
-      videoRef.current.srcObject = null;
-    }
-
-    sessionRef.current = null;
-    recognitionRef.current = null;
-    modelTranscriptBufferRef.current = '';
-    userTranscriptBufferRef.current = '';
-    isActiveRef.current = false;
-
-    setIsVideoEnabled(false);
-    setIsActive(false);
-    setConnecting(false);
-    setIsAgentSpeaking(false);
-    setCurrentTranscript(null);
-  };
-
   const persistSettings = async () => {
     const userRef = ref(rtdb, 'users/' + user.uid);
 
@@ -3014,6 +3040,7 @@ function BeatriceAgent({
     setShowProfile(false);
   };
 
+  // ---------- Render ----------
   return (
     <div
       className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-lime-300/30"
@@ -3032,6 +3059,7 @@ function BeatriceAgent({
         }}
       />
 
+      {/* Video overlay */}
       <AnimatePresence>
         {isVideoEnabled && (
           <motion.div
@@ -3075,6 +3103,7 @@ function BeatriceAgent({
               </button>
             </div>
 
+            {/* Still show the one‑line transcript overlay on top of video */}
             <AnimatePresence>
               {currentTranscript && (
                 <motion.div
@@ -3095,6 +3124,7 @@ function BeatriceAgent({
         )}
       </AnimatePresence>
 
+      {/* Header (hidden when video is on) */}
       <header className={`z-50 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 px-8 py-6 backdrop-blur-md ${isVideoEnabled ? 'pointer-events-none opacity-0' : ''}`}>
         <div className="flex items-center gap-4">
           <button onClick={() => setShowSidebar(true)} className="-ml-2 rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
@@ -3137,6 +3167,7 @@ function BeatriceAgent({
         </div>
       </header>
 
+      {/* Main orb + controls (hidden when video is on) */}
       {!isVideoEnabled && (
         <main className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-start p-8 pt-12">
           <div className="pointer-events-none absolute inset-0 z-[-1] -translate-y-20 overflow-hidden">
@@ -3153,13 +3184,14 @@ function BeatriceAgent({
             speakerBands={speakerBands}
           />
 
+          {/* One‑line transcript on the main screen (also shown in sidebar) */}
           <AnimatePresence>
             {currentTranscript && (
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
-                className="absolute left-1/2 top-[340px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+                className="pointer-events-none absolute left-1/2 top-[340px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
               >
                 <OneLineStreamingTranscript
                   role={currentTranscript.role}
@@ -3172,6 +3204,7 @@ function BeatriceAgent({
 
           <div className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end">
             <div className="mb-4 w-full max-w-md space-y-2 px-6">
+              {/* Task bubbles */}
               <AnimatePresence>
                 {tasks.map(task => (
                   <motion.div
@@ -3281,6 +3314,7 @@ function BeatriceAgent({
         </main>
       )}
 
+      {/* Sidebar with chat history AND live transcription bubble */}
       <AnimatePresence>
         {showSidebar && (
           <>
@@ -3296,7 +3330,7 @@ function BeatriceAgent({
               <div className="flex items-center justify-between border-b border-white/10 p-6">
                 <div>
                   <h2 className="text-sm font-bold uppercase tracking-widest text-white">Office History</h2>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Saved conversation records</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Live transcription & saved records</p>
                 </div>
                 <button onClick={() => setShowSidebar(false)} className="-mr-2 rounded-xl p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
                   <X className="h-5 w-5" />
@@ -3387,7 +3421,33 @@ function BeatriceAgent({
                     </div>
                   ))}
 
-                  {historyMsgs.length === 0 && (
+                  {/* Live transcription bubble directly in the chat list */}
+                  <AnimatePresence>
+                    {currentTranscript && (
+                      <motion.div
+                        key={`live-${currentTranscript.role}`}
+                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 20, scale: 0.95, transition: { duration: 0.15 } }}
+                        className={`flex flex-col ${currentTranscript.role === 'user' ? 'items-end' : 'items-start'}`}
+                      >
+                        <span className="mb-1 flex items-center gap-1.5 text-[8px] uppercase tracking-widest text-zinc-500">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                          LIVE {currentTranscript.role === 'user' ? settings.userName : settings.agentName}
+                        </span>
+
+                        <div className={`max-w-[92%] rounded-2xl border border-dashed p-3 text-xs leading-relaxed ${
+                          currentTranscript.role === 'user'
+                            ? 'rounded-tr-sm border-sky-400/20 bg-sky-400/5 text-sky-100'
+                            : 'rounded-tl-sm border-lime-300/10 bg-white/5 text-zinc-300'
+                        }`}>
+                          {currentTranscript.text}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {historyMsgs.length === 0 && !currentTranscript && (
                     <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
                       No Office History Yet
                     </div>
@@ -3430,6 +3490,7 @@ function BeatriceAgent({
         )}
       </AnimatePresence>
 
+      {/* Profile panel */}
       <AnimatePresence>
         {showProfile && (
           <motion.div
