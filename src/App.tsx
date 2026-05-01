@@ -2967,6 +2967,8 @@ function BeatriceAgent({
           `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
           `When asked to create, build, render, showcase, prototype, code, animate, make slides, make forms, make dashboards, make pages, make Three.js demos, or make printable documents, call render_web_artifact with a complete standalone HTML/CSS/JS file. Never just describe the code if the user wants it rendered or built.`,
           `For HTML/CSS/JS artifacts, include all CSS in <style> and all JS in <script>. Make it directly openable. For slides, include navigation controls and keyboard support. For documents, include print CSS and a print button. For Three.js, load Three.js from a CDN and keep everything in one HTML file.`,
+          `You have Google Search grounding enabled. When the user asks about current events, news, facts, or anything that benefits from up-to-date web information, use Google Search to ground your answers with real data. Always cite or reference the source when you use search results.`,
+          `You have URL context retrieval enabled. When the user shares a URL or asks about content from a specific webpage, use the URL context tool to fetch and read the page content directly. Do not guess or summarize without fetching.`,
         ].filter(Boolean).join('\n\n');
 
         const session = await aiRef.current.live.connect({
@@ -2983,9 +2985,13 @@ function BeatriceAgent({
             systemInstruction,
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            tools:[{
-              functionDeclarations: GOOGLE_SERVICE_TOOLS,
-            }],
+            tools:[
+              { googleSearch: {} },
+              { urlContext: {} },
+              {
+                functionDeclarations: GOOGLE_SERVICE_TOOLS,
+              },
+            ],
           },
           callbacks: {
             onopen: () => {
