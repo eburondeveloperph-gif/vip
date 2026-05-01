@@ -3541,27 +3541,12 @@ function BeatriceAgent({
       if (isImage) {
          if (previewUrl) {
             const base64Data = previewUrl.split(',')[1];
-            const session = sessionRef.current || LIVE_RUNTIME.session;
-            
-            // For images to be understood properly reliably without skipping frame samples, send it inline as clientContent
-            if (session && typeof session.send === 'function') {
-               session.send({
-                 clientContent: {
-                   turns: [{
-                     role: 'user',
-                     parts:[
-                       { text: `${settings.userName} uploaded an image named ${safeName}. Please look at it and respond.` },
-                       { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
-                     ]
-                   }]
-                 }
-               });
-            } else {
-               sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Please look at the frame and respond.`);
-               sendVideoToLive(base64Data);
-               // Send an extra frame safely to ensure the AI frame sampler catches it
-               setTimeout(() => sendVideoToLive(base64Data), 400);
-            }
+            // Always use sendVideoToLive (realtimeInput) for images as it's more reliable than inlineData
+            sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Please look at it and respond.`);
+            sendVideoToLive(base64Data);
+            // Send extra frames to ensure the AI frame sampler catches it
+            setTimeout(() => sendVideoToLive(base64Data), 400);
+            setTimeout(() => sendVideoToLive(base64Data), 800);
          }
       } else if (isVideo) {
          if (previewUrl) {
