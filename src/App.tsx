@@ -1540,7 +1540,7 @@ export default function App() {
                     onChange={(e) => setAuthPassword(e.target.value)}
                     type={showAuthPassword ? 'text' : 'password'}
                     placeholder="Password"
-                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    autoComplete="current-password"
                     className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
                   />
                   <button
