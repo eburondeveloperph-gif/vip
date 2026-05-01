@@ -56,8 +56,6 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'html' | 'text' | 'json' | 'csv' | 'code' | 'file';
-
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
@@ -70,13 +68,6 @@ interface ChatMessage {
   downloadFilename?: string;
   htmlPreviewData?: string;
   htmlPreviewFilename?: string;
-  previewKind?: PreviewKind;
-  previewData?: string;
-  previewMimeType?: string;
-  previewTitle?: string;
-  previewFilename?: string;
-  sourceUrl?: string;
-  groundingMetadata?: any;
 }
 
 interface ActionTask {
@@ -89,11 +80,6 @@ interface ActionTask {
   downloadFilename?: string;
   htmlPreviewData?: string;
   htmlPreviewFilename?: string;
-  previewKind?: PreviewKind;
-  previewData?: string;
-  previewMimeType?: string;
-  previewTitle?: string;
-  previewFilename?: string;
 }
 
 interface AgentSettings {
@@ -105,14 +91,11 @@ interface AgentSettings {
 }
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
-const GEMINI_CONTENT_MODEL = import.meta.env.VITE_GEMINI_CONTENT_MODEL || 'gemini-3.1-flash';
-const ERNIE_IMAGE_API_BASE = import.meta.env.VITE_ERNIE_IMAGE_API_BASE || 'http://localhost:7860';
-const MAX_INLINE_FILE_BYTES = 18 * 1024 * 1024;
 const EBURON_LOGO_URL = 'https://eburon.ai/icon-eburon.svg';
 const PRODUCT_BRAND = 'VEP';
 const PRODUCT_FULL_NAME = 'Virtual Employee Persona';
 
-const GEMINI_LIVE_VOICE_OPTIONS = [
+const GEMINI_LIVE_VOICE_OPTIONS =[
   { alias: 'Superman', id: 'Charon', vibe: 'deep, steady, grounded' },
   { alias: 'Wonder Woman', id: 'Kore', vibe: 'clear, composed, warm' },
   { alias: 'Batman', id: 'Fenrir', vibe: 'dark, firm, serious' },
@@ -207,7 +190,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   selectedVoice: 'Kore',
 };
 
-const GOOGLE_SERVICE_TOOLS = [
+const GOOGLE_SERVICE_TOOLS =[
   {
     name: 'render_web_artifact',
     description:
@@ -271,7 +254,7 @@ const GOOGLE_SERVICE_TOOLS = [
         query: { type: Type.STRING, description: 'Mail search query, sender, subject, or keyword.' },
         limit: { type: Type.NUMBER, description: 'Maximum number of messages to fetch.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -280,7 +263,7 @@ const GOOGLE_SERVICE_TOOLS = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        to: { type: Type.STRING, description: 'Recipient email address or comma-separated recipients.' },
+        to: { type: Type.STRING, description: 'Recipient email address or comma-separated recipients. Use current_user if requested to send to the user.' },
         subject: { type: Type.STRING, description: 'Email subject.' },
         body: { type: Type.STRING, description: 'Email body.' },
         cc: { type: Type.STRING, description: 'Optional CC recipients.' },
@@ -295,7 +278,7 @@ const GOOGLE_SERVICE_TOOLS = [
     parameters: {
       type: Type.OBJECT,
       properties: {
-        to: { type: Type.STRING, description: 'Recipient email address.' },
+        to: { type: Type.STRING, description: 'Recipient email address. Use current_user if requested to draft to the user.' },
         subject: { type: Type.STRING, description: 'Draft subject.' },
         body: { type: Type.STRING, description: 'Draft body.' },
         cc: { type: Type.STRING, description: 'Optional CC recipients.' },
@@ -314,7 +297,7 @@ const GOOGLE_SERVICE_TOOLS = [
         timeMin: { type: Type.STRING, description: 'Optional start datetime.' },
         timeMax: { type: Type.STRING, description: 'Optional end datetime.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -331,7 +314,7 @@ const GOOGLE_SERVICE_TOOLS = [
         description: { type: Type.STRING, description: 'Optional description.' },
         addMeet: { type: Type.BOOLEAN, description: 'Whether to add a video meeting link.' },
       },
-      required: ['title', 'startTime', 'endTime'],
+      required:['title', 'startTime', 'endTime'],
     },
   },
   {
@@ -348,7 +331,7 @@ const GOOGLE_SERVICE_TOOLS = [
         location: { type: Type.STRING, description: 'New event location.' },
         description: { type: Type.STRING, description: 'New event description.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -374,7 +357,7 @@ const GOOGLE_SERVICE_TOOLS = [
         fileName: { type: Type.STRING, description: 'File name or search term if id is unknown.' },
         exportMimeType: { type: Type.STRING, description: 'Optional export MIME type, e.g. application/pdf or text/plain.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -429,7 +412,7 @@ const GOOGLE_SERVICE_TOOLS = [
         range: { type: Type.STRING, description: 'Sheet range, for example Sheet1!A1:D10.' },
         query: { type: Type.STRING, description: 'File name or search query if id unknown.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -442,7 +425,7 @@ const GOOGLE_SERVICE_TOOLS = [
         range: { type: Type.STRING, description: 'Target range.' },
         values: { type: Type.OBJECT, description: 'Rows/cells to write as a 2D array.' },
       },
-      required: ['spreadsheetId', 'range', 'values'],
+      required:['spreadsheetId', 'range', 'values'],
     },
   },
   {
@@ -465,7 +448,7 @@ const GOOGLE_SERVICE_TOOLS = [
       properties: {
         listId: { type: Type.STRING, description: 'Optional task list id, defaults to @default.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -553,7 +536,7 @@ const GOOGLE_SERVICE_TOOLS = [
         query: { type: Type.STRING, description: 'Search query.' },
         sources: { type: Type.STRING, description: 'Comma-separated sources to search.' },
       },
-      required: ['query'],
+      required:['query'],
     },
   },
   {
@@ -572,64 +555,10 @@ const GOOGLE_SERVICE_TOOLS = [
         terms: { type: Type.STRING, description: 'Important terms, scope, payment, obligations, duration, termination, confidentiality, etc.' },
         emailTo: { type: Type.STRING, description: 'Optional email address to send PDF to. Use current_user if requested.' },
       },
-      required: ['title', 'contractType', 'partyA', 'partyB', 'terms'],
+      required:['title', 'contractType', 'partyA', 'partyB', 'terms'],
     },
   },
-,
-  {
-    name: 'analyze_uploaded_file',
-    description:
-      'Analyze a file that the user attached in the current chat. Supports images, screenshots, PDFs, audio, video, text, CSV, JSON, HTML, and code files when the content is available in the browser.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        fileId: { type: Type.STRING, description: 'Attachment id shown to the model when the user attached the file. Use latest when unsure.' },
-        instruction: { type: Type.STRING, description: 'What to inspect, summarize, transcribe, read, extract, or explain from the file.' },
-      },
-      required: ['instruction'],
-    },
-  },
-  {
-    name: 'fetch_url_context',
-    description:
-      'Fetch and understand a public URL using Gemini URL context. Use when the user pastes a link and asks to read, inspect, summarize, explain, or extract from it.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        url: { type: Type.STRING, description: 'The public URL to fetch.' },
-        instruction: { type: Type.STRING, description: 'What to do with the URL content.' },
-        useGoogleSearch: { type: Type.BOOLEAN, description: 'Also use Google Search grounding for context when useful.' },
-      },
-      required: ['url', 'instruction'],
-    },
-  },
-  {
-    name: 'google_search_grounding',
-    description:
-      'Use Google Search grounding for current public information, recent events, websites, products, docs, references, or anything that may have changed.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        query: { type: Type.STRING, description: 'The search or research question.' },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'generate_image_with_beatrice',
-    description:
-      'Generate an image from the conversation using the configured baidu/ERNIE-Image-Turbo Gradio endpoint. Render the generated image in chat with a download option.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        prompt: { type: Type.STRING, description: 'The final image prompt generated from the conversation.' },
-        image_size: { type: Type.STRING, description: 'Image size such as 1024x1024.' },
-        seed: { type: Type.NUMBER, description: 'Random seed. Use -1 for random.' },
-        use_pe: { type: Type.BOOLEAN, description: 'Whether to use prompt enhancement.' },
-      },
-      required: ['prompt'],
-    },
-  }];
+];
 
 function safeJsonStringify(value: any) {
   try {
@@ -713,211 +642,6 @@ function makeHtmlArtifactFile(html: string, filenameBase: string) {
   };
 }
 
-function makeTextDataUrl(text: string, mime = 'text/plain') {
-  return `data:${mime};charset=utf-8,${encodeURIComponent(text || '')}`;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('Could not read file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function dataUrlToBase64(dataUrl: string) {
-  const comma = dataUrl.indexOf(',');
-  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-}
-
-function getPreviewKindFromMime(mimeType: string, fileName = ''): PreviewKind {
-  const mime = String(mimeType || '').toLowerCase();
-  const name = String(fileName || '').toLowerCase();
-
-  if (mime.startsWith('image/')) return 'image';
-  if (mime.startsWith('video/')) return 'video';
-  if (mime.startsWith('audio/')) return 'audio';
-  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
-  if (mime.includes('html') || name.endsWith('.html') || name.endsWith('.htm')) return 'html';
-  if (mime.includes('json') || name.endsWith('.json')) return 'json';
-  if (mime.includes('csv') || name.endsWith('.csv')) return 'csv';
-  if (
-    mime.startsWith('text/') ||
-    name.endsWith('.ts') ||
-    name.endsWith('.tsx') ||
-    name.endsWith('.js') ||
-    name.endsWith('.jsx') ||
-    name.endsWith('.css') ||
-    name.endsWith('.py') ||
-    name.endsWith('.md') ||
-    name.endsWith('.txt')
-  ) {
-    return 'text';
-  }
-
-  return 'file';
-}
-
-function extractFirstUrl(text: string) {
-  return String(text || '').match(/https?:\/\/[^\s)]+/i)?.[0] || '';
-}
-
-function stripMarkdownFence(value: string) {
-  const trimmed = String(value || '').trim();
-  const fenced = trimmed.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-
-function parseGradioEventId(raw: string) {
-  const text = String(raw || '').trim();
-
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === 'string') return parsed;
-    if (parsed.event_id) return parsed.event_id;
-  } catch {}
-
-  return (
-    text.match(/"event_id"\s*:\s*"([^"]+)"/)?.[1] ||
-    text.match(/event_id['"]?\s*[:=]\s*['"]([^'"]+)['"]/)?.[1] ||
-    text.match(/"([^"]{8,})"/)?.[1] ||
-    ''
-  );
-}
-
-function parseGradioStream(raw: string) {
-  const lines = String(raw || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  const dataLines = lines
-    .filter(line => line.startsWith('data:'))
-    .map(line => line.replace(/^data:\s*/, '').trim())
-    .filter(line => line && line !== '[DONE]');
-
-  const candidates = dataLines.length ? dataLines.reverse() : [String(raw || '').trim()];
-
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch {}
-  }
-
-  return null;
-}
-
-function normalizeGeneratedImageUrl(imageOutput: any) {
-  if (!imageOutput) return '';
-
-  if (typeof imageOutput === 'string') {
-    if (imageOutput.startsWith('http') || imageOutput.startsWith('data:')) return imageOutput;
-    if (imageOutput.startsWith('/')) return `${ERNIE_IMAGE_API_BASE}${imageOutput}`;
-    return `${ERNIE_IMAGE_API_BASE}/file=${encodeURIComponent(imageOutput)}`;
-  }
-
-  if (imageOutput.url) return imageOutput.url;
-  if (imageOutput.path) {
-    const path = String(imageOutput.path);
-    if (path.startsWith('http')) return path;
-    if (path.startsWith('/')) return `${ERNIE_IMAGE_API_BASE}${path}`;
-    return `${ERNIE_IMAGE_API_BASE}/file=${encodeURIComponent(path)}`;
-  }
-
-  return '';
-}
-
-function buildPreviewDownloadFromResult(result: any, fallbackName: string) {
-  const fallback = makeDownloadFile(result, fallbackName);
-
-  return {
-    downloadData: result.downloadData || fallback.downloadData,
-    downloadFilename: result.downloadFilename || fallback.downloadFilename,
-    htmlPreviewData: result.htmlPreviewData,
-    htmlPreviewFilename: result.htmlPreviewFilename,
-    previewKind: result.previewKind,
-    previewData: result.previewData,
-    previewMimeType: result.previewMimeType,
-    previewTitle: result.previewTitle,
-    previewFilename: result.previewFilename,
-    sourceUrl: result.sourceUrl,
-    groundingMetadata: result.groundingMetadata,
-  };
-}
-
-function ChatPreviewBlock({ msg }: { msg: ChatMessage }) {
-  const previewData = msg.previewData || msg.htmlPreviewData || msg.downloadData;
-  const previewKind = msg.previewKind || (msg.htmlPreviewData ? 'html' : undefined);
-  const title = msg.previewTitle || msg.previewFilename || msg.htmlPreviewFilename || msg.downloadFilename || msg.fileName || 'Preview';
-
-  if (!previewKind || !previewData) return null;
-
-  if (previewKind === 'image') {
-    return (
-      <div className="mt-3 overflow-hidden rounded-xl border border-lime-300/15 bg-black/30">
-        <img src={previewData} alt={title} className="max-h-80 w-full object-contain" />
-      </div>
-    );
-  }
-
-  if (previewKind === 'video') {
-    return (
-      <video
-        src={previewData}
-        controls
-        className="mt-3 max-h-80 w-full rounded-xl border border-lime-300/15 bg-black"
-      />
-    );
-  }
-
-  if (previewKind === 'audio') {
-    return (
-      <audio
-        src={previewData}
-        controls
-        className="mt-3 w-full"
-      />
-    );
-  }
-
-  if (previewKind === 'pdf' || previewKind === 'html') {
-    return (
-      <iframe
-        title={title}
-        src={previewData}
-        sandbox={previewKind === 'html' ? 'allow-scripts allow-forms allow-popups allow-modals' : undefined}
-        className="mt-3 h-80 w-full rounded-xl border border-lime-300/15 bg-white"
-      />
-    );
-  }
-
-  if (previewKind === 'text' || previewKind === 'json' || previewKind === 'csv' || previewKind === 'code') {
-    let text = '';
-
-    try {
-      const encoded = String(previewData).split(',')[1] || '';
-      text = decodeURIComponent(encoded);
-    } catch {
-      text = msg.text || '';
-    }
-
-    return (
-      <pre className="mt-3 max-h-80 overflow-auto rounded-xl border border-white/10 bg-black/35 p-3 text-[10px] leading-relaxed text-zinc-200">
-        {text}
-      </pre>
-    );
-  }
-
-  return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-[10px] text-zinc-400">
-      Preview is not available for this file type, but the file can be downloaded.
-    </div>
-  );
-}
-
-
 function makeBlobDownloadData(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -965,7 +689,7 @@ function buildEmailRaw({
     base64Content: string;
   };
 }) {
-  const headers = [
+  const headers =[
     `To: ${to}`,
     cc ? `Cc: ${cc}` : '',
     bcc ? `Bcc: ${bcc}` : '',
@@ -974,7 +698,7 @@ function buildEmailRaw({
   ].filter(Boolean);
 
   if (!attachment) {
-    const raw = [
+    const raw =[
       ...headers,
       'Content-Type: text/plain; charset="UTF-8"',
       '',
@@ -986,7 +710,7 @@ function buildEmailRaw({
 
   const boundary = `boundary_${Date.now()}`;
 
-  const raw = [
+  const raw =[
     ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
@@ -1162,7 +886,7 @@ function LimeVoiceOrb({
     bandsRef.current = speakerBands;
     activeRef.current = isActive;
     speakingRef.current = isAgentSpeaking;
-  }, [isActive, isAgentSpeaking, speakerBands, speakerLevel]);
+  },[isActive, isAgentSpeaking, speakerBands, speakerLevel]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1192,7 +916,7 @@ function LimeVoiceOrb({
 
     const makeOrbPath = (cx: number, cy: number, radius: number, pulse: number, time: number) => {
       const path = new Path2D();
-      const points: Array<{ x: number; y: number }> = [];
+      const points: Array<{ x: number; y: number }> =[];
       const bands = bandsRef.current.length ? bandsRef.current : Array(20).fill(0);
       const live = activeRef.current && speakingRef.current;
       const count = 112;
@@ -1328,7 +1052,7 @@ function LimeVoiceOrb({
 
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  },[]);
 
   return (
     <div className="relative flex h-72 w-72 items-center justify-center">
@@ -1354,7 +1078,7 @@ function StartIconMicVisualizer({
 }) {
   const innerBands = micBands?.length
     ? micBands.slice(5, 14)
-    : [0.35, 0.5, 0.72, 0.9, 1, 0.82, 0.64, 0.46, 0.32].map(n => n * micLevel);
+    :[0.35, 0.5, 0.72, 0.9, 1, 0.82, 0.64, 0.46, 0.32].map(n => n * micLevel);
 
   return (
     <button
@@ -1418,17 +1142,17 @@ function StartIconMicVisualizer({
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const[loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
+  const[authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
   const [showAuthPassword, setShowAuthPassword] = useState(false);
-  const [showAuthConfirmPassword, setShowAuthConfirmPassword] = useState(false);
+  const[showAuthConfirmPassword, setShowAuthConfirmPassword] = useState(false);
 
   useEffect(() => {
     const fontId = 'beatrice-roboto-font';
@@ -1440,7 +1164,7 @@ export default function App() {
       link.href = 'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap';
       document.head.appendChild(link);
     }
-  }, []);
+  },[]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -1497,7 +1221,7 @@ export default function App() {
     });
 
     return () => unsub();
-  }, []);
+  },[]);
 
   const getAuthErrorMessage = (error: any) => {
     const code = String(error?.code || '');
@@ -1818,20 +1542,20 @@ function BeatriceAgent({
 }) {
   const [isActive, setIsActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
+  const[isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [micBands, setMicBands] = useState<number[]>(Array(20).fill(0));
   const [speakerLevel, setSpeakerLevel] = useState(0);
-  const [speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
+  const[speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
   const [tasks, setTasks] = useState<ActionTask[]>([]);
-  const [historyContext, setHistoryContext] = useState<string>('');
+  const[historyContext, setHistoryContext] = useState<string>('');
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
   const [currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model'; text: string } | null>(null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [showSidebar, setShowSidebar] = useState(false);
+  const[facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const[showSidebar, setShowSidebar] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [settings, setSettings] = useState<AgentSettings>({
@@ -1843,7 +1567,6 @@ function BeatriceAgent({
   const sessionRef = useRef<any>(null);
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const recognitionRef = useRef<any>(null);
 
   const transcriptTimeoutRef = useRef<any>(null);
   const isMutedRef = useRef(false);
@@ -1854,17 +1577,6 @@ function BeatriceAgent({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoIntervalRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const attachedFilesRef = useRef<Record<string, {
-    id: string;
-    name: string;
-    mimeType: string;
-    size: number;
-    dataUrl: string;
-    base64: string;
-    previewKind: PreviewKind;
-    textPreview?: string;
-  }>>({});
-  const lastAttachedFileIdRef = useRef<string | null>(null);
 
   const modelTranscriptBufferRef = useRef('');
   const userTranscriptBufferRef = useRef('');
@@ -1905,8 +1617,8 @@ function BeatriceAgent({
     );
 
     const unsub = onValue(historyRef, (snap) => {
-      const msgs: string[] = [];
-      const rawMsgs: ChatMessage[] = [];
+      const msgs: string[] =[];
+      const rawMsgs: ChatMessage[] =[];
 
       snap.forEach(child => {
         const m = child.val() as ChatMessage;
@@ -1925,8 +1637,6 @@ function BeatriceAgent({
 
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (apiKey) aiRef.current = new GoogleGenAI({ apiKey });
-
-    audioStreamerRef.current = new AudioStreamer();
 
     return () => {
       unsub();
@@ -1999,7 +1709,7 @@ function BeatriceAgent({
 
       try {
         if (recorder && typeof recorder.getFrequencyBands === 'function') {
-          const bands = recorder.getFrequencyBands(20) || [];
+          const bands = recorder.getFrequencyBands(20) ||[];
           nextBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
           const frequencyAverage = nextBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextBands.length, 1);
           const recorderLevel = typeof recorder.getLevel === 'function' ? recorder.getLevel() : 0;
@@ -2015,7 +1725,7 @@ function BeatriceAgent({
 
       try {
         if (streamer && typeof streamer.getFrequencyBands === 'function') {
-          const bands = streamer.getFrequencyBands(20) || [];
+          const bands = streamer.getFrequencyBands(20) ||[];
           nextSpeakerBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
           const frequencyAverage = nextSpeakerBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextSpeakerBands.length, 1);
           const streamerLevel = typeof streamer.getLevel === 'function' ? streamer.getLevel() : 0;
@@ -2165,7 +1875,7 @@ function BeatriceAgent({
       await googleJson(`https://docs.googleapis.com/v1/documents/${doc.documentId}:batchUpdate`, {
         method: 'POST',
         body: JSON.stringify({
-          requests: [
+          requests:[
             {
               insertText: {
                 location: { index: 1 },
@@ -2314,12 +2024,12 @@ function BeatriceAgent({
         );
 
         const messages = await Promise.all(
-          (list.messages || []).map(async (m: any) => {
+          (list.messages ||[]).map(async (m: any) => {
             const msg = await googleJson(
               `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
             );
 
-            const headers = msg.payload?.headers || [];
+            const headers = msg.payload?.headers ||[];
             const findHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
 
             return {
@@ -2337,10 +2047,13 @@ function BeatriceAgent({
       }
 
       case 'gmail_send': {
+        const to = args.to === 'current_user' ? getCurrentUserEmail() : args.to;
+        if (!to) throw new Error('Recipient email address is required.');
+
         const result = await sendGmail({
-          to: args.to,
-          subject: args.subject,
-          body: args.body,
+          to,
+          subject: args.subject || 'No Subject',
+          body: args.body || '',
           cc: args.cc,
           bcc: args.bcc,
         });
@@ -2349,10 +2062,13 @@ function BeatriceAgent({
       }
 
       case 'gmail_draft': {
+        const to = args.to === 'current_user' ? getCurrentUserEmail() : args.to;
+        if (!to) throw new Error('Recipient email address is required.');
+
         const raw = buildEmailRaw({
-          to: args.to,
-          subject: args.subject,
-          body: args.body,
+          to,
+          subject: args.subject || 'No Subject',
+          body: args.body || '',
           cc: args.cc,
           bcc: args.bcc,
         });
@@ -2371,7 +2087,7 @@ function BeatriceAgent({
           `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=20&timeMin=${encodeURIComponent(range.timeMin)}&timeMax=${encodeURIComponent(range.timeMax)}`
         );
 
-        return { toolName, executedAt, status: 'completed', range, events: events.items || [] };
+        return { toolName, executedAt, status: 'completed', range, events: events.items ||[] };
       }
 
       case 'calendar_create_event': {
@@ -2462,7 +2178,7 @@ function BeatriceAgent({
           `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false${mimeClause}`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime,size)&pageSize=${limit}`
         );
 
-        return { toolName, executedAt, status: 'completed', files: result.files || [] };
+        return { toolName, executedAt, status: 'completed', files: result.files ||[] };
       }
 
       case 'drive_read_file': {
@@ -2590,7 +2306,7 @@ function BeatriceAgent({
           await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
             method: 'POST',
             body: JSON.stringify({
-              requests: [
+              requests:[
                 {
                   deleteContentRange: {
                     range: { startIndex: 1, endIndex: Math.max(1, endIndex - 1) },
@@ -2609,7 +2325,7 @@ function BeatriceAgent({
           await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
             method: 'POST',
             body: JSON.stringify({
-              requests: [
+              requests:[
                 {
                   insertText: {
                     endOfSegmentLocation: {},
@@ -2643,7 +2359,7 @@ function BeatriceAgent({
           `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`
         );
 
-        return { toolName, executedAt, status: 'completed', spreadsheetId, range, values: result.values || [] };
+        return { toolName, executedAt, status: 'completed', spreadsheetId, range, values: result.values ||[] };
       }
 
       case 'sheets_update': {
@@ -2652,7 +2368,7 @@ function BeatriceAgent({
           {
             method: 'PUT',
             body: JSON.stringify({
-              values: Array.isArray(args.values) ? args.values : args.values?.values || [],
+              values: Array.isArray(args.values) ? args.values : args.values?.values ||[],
             }),
           }
         );
@@ -2672,7 +2388,7 @@ function BeatriceAgent({
       case 'tasks_list': {
         const listId = args.listId || '@default';
         const result = await googleJson(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(listId)}/tasks`);
-        return { toolName, executedAt, status: 'completed', tasks: result.items || [] };
+        return { toolName, executedAt, status: 'completed', tasks: result.items ||[] };
       }
 
       case 'tasks_create': {
@@ -2693,7 +2409,7 @@ function BeatriceAgent({
           `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(args.query)}&readMask=names,emailAddresses,phoneNumbers,organizations`
         );
 
-        return { toolName, executedAt, status: 'completed', contacts: result.results || [] };
+        return { toolName, executedAt, status: 'completed', contacts: result.results ||[] };
       }
 
       case 'meet_schedule': {
@@ -2733,7 +2449,7 @@ function BeatriceAgent({
           `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${limit}&q=${encodeURIComponent(args.query)}`
         );
 
-        return { toolName, executedAt, status: 'completed', videos: result.items || [] };
+        return { toolName, executedAt, status: 'completed', videos: result.items ||[] };
       }
 
       case 'forms_create': {
@@ -2848,260 +2564,15 @@ function BeatriceAgent({
         };
       }
 
-
-      case 'analyze_uploaded_file': {
-        if (!aiRef.current) throw new Error('Gemini API key is missing.');
-
-        const fileId = args.fileId || lastAttachedFileIdRef.current;
-        const instruction = args.instruction || 'Inspect this file and summarize what is important.';
-
-        if (!fileId) throw new Error('No attached file id was provided.');
-        const file = attachedFilesRef.current[fileId];
-
-        if (!file) {
-          throw new Error('The attached file is no longer available in this browser session.');
-        }
-
-        if (file.size > MAX_INLINE_FILE_BYTES) {
-          throw new Error(`File is too large for inline analysis in the browser. Size: ${file.size} bytes.`);
-        }
-
-        const response = await aiRef.current.models.generateContent({
-          model: GEMINI_CONTENT_MODEL,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `You are Beatrice's file-analysis tool.
-
-File metadata:
-- id: ${file.id}
-- name: ${file.name}
-- mimeType: ${file.mimeType}
-- size: ${file.size} bytes
-
-User instruction:
-${instruction}
-
-Analyze only what is actually available in the file. If text is visible in an image, extract it if possible. If this is audio, transcribe or summarize it when possible. If this is video, summarize the visible and audible content when possible. Be honest about uncertainty.`,
-                },
-                {
-                  inlineData: {
-                    mimeType: file.mimeType || 'application/octet-stream',
-                    data: file.base64,
-                  },
-                },
-              ],
-            },
-          ],
-        });
-
-        const answer = response.text || 'I checked the file, but I could not extract a clear result.';
-
-        return {
-          toolName,
-          executedAt,
-          status: 'completed',
-          note: `I checked ${file.name}.`,
-          answer,
-          file: {
-            id: file.id,
-            name: file.name,
-            mimeType: file.mimeType,
-            size: file.size,
-          },
-          previewKind: file.previewKind,
-          previewData: file.dataUrl,
-          previewMimeType: file.mimeType,
-          previewTitle: file.name,
-          previewFilename: file.name,
-          downloadData: file.dataUrl,
-          downloadFilename: file.name,
-          textPreview: answer,
-        };
-      }
-
-      case 'fetch_url_context': {
-        if (!aiRef.current) throw new Error('Gemini API key is missing.');
-
-        const url = args.url || extractFirstUrl(args.instruction || '');
-        if (!url) throw new Error('No URL was provided.');
-
-        const instruction = args.instruction || 'Read this URL and summarize the important information.';
-        const tools: any[] = [{ urlContext: {} }];
-
-        if (args.useGoogleSearch !== false) {
-          tools.push({ googleSearch: {} });
-        }
-
-        const response = await aiRef.current.models.generateContent({
-          model: GEMINI_CONTENT_MODEL,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `Use URL context to inspect this page.
-
-URL:
-${url}
-
-Instruction:
-${instruction}
-
-If the page is private, blocked, unsafe, unreachable, or requires login, say so clearly.`,
-                },
-              ],
-            },
-          ],
-          config: { tools },
-        });
-
-        const answer = response.text || 'I checked the URL, but I could not extract a clear result.';
-        const data = makeTextDataUrl(answer, 'text/markdown');
-
-        return {
-          toolName,
-          executedAt,
-          status: 'completed',
-          note: 'I checked the page.',
-          sourceUrl: url,
-          answer,
-          urlContextMetadata: (response as any).candidates?.[0]?.urlContextMetadata || null,
-          groundingMetadata: (response as any).candidates?.[0]?.groundingMetadata || null,
-          previewKind: 'text',
-          previewData: data,
-          previewMimeType: 'text/markdown',
-          previewTitle: 'URL result',
-          previewFilename: 'url-result.md',
-          downloadData: data,
-          downloadFilename: 'url-result.md',
-        };
-      }
-
-      case 'google_search_grounding': {
-        if (!aiRef.current) throw new Error('Gemini API key is missing.');
-
-        const query = args.query || '';
-        if (!query.trim()) throw new Error('No search query was provided.');
-
-        const response = await aiRef.current.models.generateContent({
-          model: GEMINI_CONTENT_MODEL,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `Use Google Search grounding to answer this with current public information.
-
-Query:
-${query}
-
-Keep the answer clear, practical, and honest. Include source context when available.`,
-                },
-              ],
-            },
-          ],
-          config: {
-            tools: [{ googleSearch: {} }],
-          },
-        });
-
-        const answer = response.text || 'I searched, but I could not extract a clear result.';
-        const data = makeTextDataUrl(answer, 'text/markdown');
-
-        return {
-          toolName,
-          executedAt,
-          status: 'completed',
-          note: 'I checked Google Search.',
-          query,
-          answer,
-          groundingMetadata: (response as any).candidates?.[0]?.groundingMetadata || null,
-          previewKind: 'text',
-          previewData: data,
-          previewMimeType: 'text/markdown',
-          previewTitle: 'Google Search result',
-          previewFilename: 'google-search-result.md',
-          downloadData: data,
-          downloadFilename: 'google-search-result.md',
-        };
-      }
-
-      case 'generate_image_with_beatrice': {
-        const prompt = String(args.prompt || '').trim();
-        if (!prompt) throw new Error('No image prompt was provided.');
-
-        const imageSize = args.image_size || '1024x1024';
-        const seed = typeof args.seed === 'number' ? args.seed : -1;
-        const usePe = typeof args.use_pe === 'boolean' ? args.use_pe : true;
-
-        const startRes = await fetch(`${ERNIE_IMAGE_API_BASE}/gradio_api/call/generate_image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: [prompt, imageSize, seed, usePe],
-          }),
-        });
-
-        if (!startRes.ok) {
-          throw new Error(`Image generation start failed: ${startRes.status} ${startRes.statusText}`);
-        }
-
-        const startText = await startRes.text();
-        const eventId = parseGradioEventId(startText);
-
-        if (!eventId) {
-          throw new Error(`Image generator did not return an event id. Raw response: ${startText}`);
-        }
-
-        const resultRes = await fetch(`${ERNIE_IMAGE_API_BASE}/gradio_api/call/generate_image/${encodeURIComponent(eventId)}`, {
-          method: 'GET',
-        });
-
-        if (!resultRes.ok) {
-          throw new Error(`Image generation result failed: ${resultRes.status} ${resultRes.statusText}`);
-        }
-
-        const raw = await resultRes.text();
-        const parsed = parseGradioStream(raw);
-        const output = Array.isArray(parsed) ? parsed : parsed?.data || parsed?.output || parsed?.result;
-        const imageOutput = output?.[0];
-        const revisedPrompt = output?.[1] || prompt;
-        const imageUrl = normalizeGeneratedImageUrl(imageOutput);
-
-        if (!imageUrl) {
-          throw new Error(`No generated image URL was returned. Raw result: ${raw}`);
-        }
-
-        return {
-          toolName,
-          executedAt,
-          status: 'completed',
-          note: 'I finished the image.',
-          prompt,
-          revisedPrompt,
-          imageSize,
-          seed,
-          usePe,
-          eventId,
-          previewKind: 'image',
-          previewData: imageUrl,
-          previewMimeType: 'image/png',
-          previewTitle: 'Generated image',
-          previewFilename: 'beatrice-generated-image.png',
-          downloadData: imageUrl,
-          downloadFilename: 'beatrice-generated-image.png',
-        };
-      }
-
       default:
         throw new Error(`Tool "${toolName}" is not implemented yet.`);
     }
   };
 
   const startSession = async () => {
+    // strict concurrency check to prevent overlapping audio streams
+    if (isActiveRef.current || connecting) return;
+
     if (!aiRef.current) {
       alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
       return;
@@ -3112,12 +2583,16 @@ Keep the answer clear, practical, and honest. Include source context when availa
     userTranscriptBufferRef.current = '';
 
     try {
+      // properly shutdown any zombied streamer before initializing a new one to prevent double playback
       if (audioStreamerRef.current) {
-        await audioStreamerRef.current.init(24000);
+        try { audioStreamerRef.current.stop(); } catch (e) {}
       }
+      
+      audioStreamerRef.current = new AudioStreamer();
+      await audioStreamerRef.current.init(24000);
 
       const hasGoogleServiceAccess = Boolean(localStorage.getItem('googleAccessToken'));
-      const systemInstruction = [
+      const systemInstruction =[
         BASE_LIVE_AGENT_PROMPT,
         BIBLE_PERSONALITY || '',
         historyContext,
@@ -3148,7 +2623,7 @@ Keep the answer clear, practical, and honest. Include source context when availa
           systemInstruction,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          tools: [{
+          tools:[{
             functionDeclarations: GOOGLE_SERVICE_TOOLS,
           }],
         },
@@ -3162,7 +2637,7 @@ Keep the answer clear, practical, and honest. Include source context when availa
               const calls = msg.toolCall.functionCalls;
 
               if (calls) {
-                const resps = [];
+                const resps =[];
 
                 for (const c of calls) {
                   const toolName = c.name || 'unknown_tool';
@@ -3170,19 +2645,24 @@ Keep the answer clear, practical, and honest. Include source context when availa
                   const tid = Math.random().toString(36).substring(7);
                   const action = safeJsonStringify(args || {});
 
-                  setTasks(p => [...p, {
+                  setTasks(p =>[...p, {
                     id: tid,
                     serviceName: toolName,
                     action,
                     status: 'processing',
                   }]);
 
-                  updateLiveTranscript('model', "Yes, I'm working on that now.", 2500);
-
                   try {
                     const result = await executeGoogleTool(toolName, args);
 
-                    const download = buildPreviewDownloadFromResult(result, toolName);
+                    const download = result.downloadData && result.downloadFilename
+                      ? {
+                          downloadData: result.downloadData,
+                          downloadFilename: result.downloadFilename,
+                          htmlPreviewData: result.htmlPreviewData,
+                          htmlPreviewFilename: result.htmlPreviewFilename,
+                        }
+                      : makeDownloadFile(result, toolName);
 
                     setTasks(p => p.map(t => t.id === tid ? {
                       ...t,
@@ -3308,49 +2788,6 @@ Keep the answer clear, practical, and honest. Include source context when availa
       });
 
       sessionRef.current = session;
-
-      try {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-        if (SpeechRecognition && !recognitionRef.current) {
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-
-          recognitionRef.current.onresult = (event: any) => {
-            let interimText = '';
-            let finalText = '';
-
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-              else interimText += event.results[i][0].transcript;
-            }
-
-            const visibleText = (finalText || interimText).trim();
-
-            if (visibleText) {
-              userTranscriptBufferRef.current = visibleText;
-              updateLiveTranscript('user', visibleText, 3200);
-            }
-
-            if (finalText.trim()) {
-              saveMessage('user', finalText.trim());
-              lastSavedUserTranscriptRef.current = finalText.trim();
-              userTranscriptBufferRef.current = '';
-            }
-          };
-
-          recognitionRef.current.onend = () => {
-            if (sessionRef.current && isActiveRef.current) {
-              try {
-                recognitionRef.current?.start();
-              } catch (e) {}
-            }
-          };
-
-          recognitionRef.current.start();
-        }
-      } catch (e) {}
 
       audioRecorderRef.current = new AudioRecorder((base64) => {
         if (isMutedRef.current) return;
@@ -3487,78 +2924,23 @@ Keep the answer clear, practical, and honest. Include source context when availa
 
   const handleAttachFile = async (file: File) => {
     const safeName = file.name || 'attached file';
-    const fileType = file.type || 'application/octet-stream';
-    const fileId = `file_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const fileType = file.type || 'unknown';
 
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      const base64 = dataUrlToBase64(dataUrl);
-      const previewKind = getPreviewKindFromMime(fileType, safeName);
+    saveMessage('user', `[Attached file: ${safeName}]`, {
+      fileName: safeName,
+      fileType,
+    });
 
-      let textPreview = '';
+    updateLiveTranscript('user', `Attached file: ${safeName}`, 3000);
 
-      if (
-        previewKind === 'text' ||
-        previewKind === 'json' ||
-        previewKind === 'csv' ||
-        previewKind === 'html' ||
-        fileType.startsWith('text/')
-      ) {
-        textPreview = await file.text().catch(() => '');
-      }
-
-      attachedFilesRef.current[fileId] = {
-        id: fileId,
-        name: safeName,
-        mimeType: fileType,
-        size: file.size,
-        dataUrl,
-        base64,
-        previewKind,
-        textPreview,
-      };
-      lastAttachedFileIdRef.current = fileId;
-
-      saveMessage('user', `[Attached file: ${safeName}]`, {
-        fileName: safeName,
-        fileType,
-        previewKind,
-        previewData: dataUrl,
-        previewMimeType: fileType,
-        previewTitle: safeName,
-        previewFilename: safeName,
-        downloadData: dataUrl,
-        downloadFilename: safeName,
-        htmlPreviewData: previewKind === 'html' ? dataUrl : undefined,
-        htmlPreviewFilename: previewKind === 'html' ? safeName : undefined,
-      });
-
-      updateLiveTranscript('user', `Attached file: ${safeName}`, 3000);
-
-      if (sessionRef.current) {
-        sendTextToLive(
-          `${settings.userName} attached a file.
-
-Attachment id: ${fileId}
-File name: ${safeName}
-MIME type: ${fileType}
-Size: ${file.size} bytes
-Preview kind: ${previewKind}
-
-The actual file content is available in the app runtime. If the user asks to inspect, read, summarize, transcribe, extract text, check the image, check the video, check the audio, or analyze this attachment, call analyze_uploaded_file with fileId "${fileId}". Do not say you can only see the filename. You may briefly acknowledge: "Yes, I received it. Tell me what you want me to check."`
-        );
-      } else {
-        updateLiveTranscript('model', `${settings.agentName} is not connected yet. Start the live session first, then I can inspect it.`, 3400);
-      }
-    } catch (error: any) {
-      console.error(error);
-      saveMessage('model', `I received the file, but I could not load its contents here: ${error?.message || error}`);
-      updateLiveTranscript('model', 'I received the file, but I could not load its contents properly.', 3400);
+    if (sessionRef.current) {
+      sendTextToLive(
+        `${settings.userName} attached a file named "${safeName}" with type "${fileType}". Acknowledge it normally. If you cannot actually parse the file contents from the current runtime, say that clearly and ask for readable text or backend parsing.`
+      );
     }
   };
 
   const stopSession = () => {
-    try { recognitionRef.current?.stop(); } catch (e) {}
     try { audioRecorderRef.current?.stop(); } catch (e) {}
     try { audioStreamerRef.current?.stop(); } catch (e) {}
     try { sessionRef.current?.close(); } catch (e) {}
@@ -3574,7 +2956,6 @@ The actual file content is available in the app runtime. If the user asks to ins
     }
 
     sessionRef.current = null;
-    recognitionRef.current = null;
     modelTranscriptBufferRef.current = '';
     userTranscriptBufferRef.current = '';
     isActiveRef.current = false;
@@ -3933,8 +3314,6 @@ The actual file content is available in the app runtime. If the user asks to ins
                         )}
 
                         {msg.text}
-
-                        <ChatPreviewBlock msg={msg} />
 
                         {msg.htmlPreviewData && msg.htmlPreviewFilename && (
                           <div className="mt-3 grid grid-cols-1 gap-2">
