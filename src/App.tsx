@@ -3413,6 +3413,75 @@ function BeatriceAgent({
     }
   };
 
+  // Extract text from various document formats
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    const name = file.name.toLowerCase();
+    const isDocx = name.endsWith('.docx');
+    const isXlsx = name.endsWith('.xlsx') || name.endsWith('.xls');
+    const isPdf = name.endsWith('.pdf');
+
+    if (isDocx) {
+      try {
+        const mammoth: any = await import('mammoth/mammoth.browser');
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        return String(result?.value || '').trim();
+      } catch (e) {
+        console.error('DOCX extraction error:', e);
+        return '';
+      }
+    }
+
+    if (isXlsx) {
+      try {
+        const XLSX: any = await import('xlsx');
+        const arrayBuffer = await file.arrayBuffer();
+        const wb = XLSX.read(arrayBuffer, { type: 'array' });
+        const lines: string[] = [];
+        for (const sheetName of wb.SheetNames) {
+          lines.push(`## SHEET: ${sheetName}`);
+          const ws = wb.Sheets[sheetName];
+          const csv: string = XLSX.utils.sheet_to_csv(ws);
+          lines.push(csv);
+        }
+        return lines.join('\n');
+      } catch (e) {
+        console.error('XLSX extraction error:', e);
+        return '';
+      }
+    }
+
+    if (isPdf) {
+      try {
+        const pdfjsLib: any = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          fullText += `\n--- Page ${i} ---\n${pageText}`;
+        }
+        
+        return fullText.trim();
+      } catch (e) {
+        console.error('PDF extraction error:', e);
+        return '';
+      }
+    }
+
+    // Default to plain text
+    try {
+      return (await file.text()).trim();
+    } catch (e) {
+      return '';
+    }
+  };
+
   const handleAttachFile = async (file: File) => {
     const safeName = file.name || 'attached file';
     const fileType = file.type || 'unknown';
@@ -3427,7 +3496,16 @@ function BeatriceAgent({
     let previewText = '';
     let fullText = '';
 
-    if (!isImage && !isVideo && !isAudio && (isTextLike || file.size < 500000)) {
+    // Extract text from documents (PDF, DOCX, XLSX, etc.)
+    if (!isImage && !isVideo && !isAudio) {
+      fullText = await extractTextFromFile(file);
+      if (fullText) {
+        previewText = fullText.slice(0, 800) + (fullText.length > 800 ? '\n...[truncated]' : '');
+      }
+    }
+
+    // Fallback for text-like files if extraction failed
+    if (!fullText && !isImage && !isVideo && !isAudio && isTextLike) {
       try {
         fullText = await file.text();
         if (!/\x00/.test(fullText)) {
