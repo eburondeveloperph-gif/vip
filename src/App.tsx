@@ -27,7 +27,7 @@ import {
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BASE_LIVE_AGENT_PROMPT, BIBLE_PERSONALITY } from './lib/personality';
-import { uploadFileToSupabase } from './lib/supabase';
+import { supabase, uploadFileToSupabase, uploadBase64ImageToSupabase, uploadVideoFrameToSupabase, extractVideoFrames } from './lib/supabase';
 import {
   Loader2,
   Power,
@@ -72,6 +72,9 @@ interface ChatMessage {
   htmlPreviewFilename?: string;
   previewUrl?: string;
   previewText?: string;
+  supabasePath?: string;
+  supabaseUrl?: string;
+  videoFrames?: string[]; // Array of frame URLs for video snapshots (AI only)
 }
 
 interface ActionTask {
@@ -3433,6 +3436,76 @@ function BeatriceAgent({
     }
   };
 
+  // Extract video frames at 1-second intervals and upload to Supabase for AI analysis
+  const extractVideoFramesForAI = async (
+    file: File,
+    previewUrl: string,
+    videoPath: string
+  ): Promise<string[]> => {
+    const frameUrls: string[] = [];
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.muted = true;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject();
+      });
+
+      const duration = video.duration;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return [];
+
+      // Use smaller dimensions for frames to save storage
+      canvas.width = 320;
+      canvas.height = 180;
+
+      // Capture frames at 1-second intervals (max 10 frames to avoid overloading)
+      const frameCount = Math.min(Math.floor(duration), 10);
+      for (let i = 0; i < frameCount; i++) {
+        const time = i;
+        video.currentTime = time;
+
+        await new Promise<void>((resolve) => {
+          video.onseeked = () => resolve();
+        });
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convert to blob and upload
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7);
+        });
+
+        if (blob) {
+          const frameFile = new File([blob], `frame_${time}s.jpg`, { type: 'image/jpeg' });
+          const framePath = `frames/${videoPath.replace(/[^a-zA-Z0-9]/g, '_')}_${time}s.jpg`;
+
+          try {
+            const { error } = await supabase.storage
+              .from('uploads')
+              .upload(framePath, frameFile, { cacheControl: '3600', upsert: true });
+
+            if (!error) {
+              const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(framePath);
+              frameUrls.push(urlData.publicUrl);
+            }
+          } catch (e) {
+            console.error('Frame upload error at time', time, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Video frame extraction error:', e);
+    } finally {
+      URL.revokeObjectURL(video.src);
+    }
+
+    return frameUrls;
+  };
+
   // Extract text from various document formats
   const extractTextFromFile = async (file: File): Promise<string> => {
     const name = file.name.toLowerCase();
@@ -3536,10 +3609,33 @@ function BeatriceAgent({
       } catch (e) {}
     }
 
+    // Upload to Supabase storage
+    let supabasePath = '';
+    let supabaseUrl = '';
+    let videoFrames: string[] = [];
+
+    try {
+      const uploadResult = await uploadFileToSupabase(file, 'uploads');
+      if (!uploadResult.error && uploadResult.publicUrl) {
+        supabasePath = uploadResult.path;
+        supabaseUrl = uploadResult.publicUrl;
+
+        // For videos, extract frames and upload to Supabase (AI-only, hidden from frontend)
+        if (isVideo && previewUrl) {
+          videoFrames = await extractVideoFramesForAI(file, previewUrl, supabasePath);
+        }
+      }
+    } catch (e) {
+      console.error('Supabase upload error:', e);
+    }
+
     // Pass conditionally generated previews ensuring we never pass "undefined" mapped fields to Firebase.
     const extraData: any = { fileName: safeName, fileType };
     if (previewUrl) extraData.previewUrl = previewUrl;
     if (previewText) extraData.previewText = previewText;
+    if (supabasePath) extraData.supabasePath = supabasePath;
+    if (supabaseUrl) extraData.supabaseUrl = supabaseUrl;
+    if (videoFrames.length > 0) extraData.videoFrames = videoFrames;
 
     saveMessage('user', `[Attached file: ${safeName}]`, extraData);
 
@@ -3559,19 +3655,32 @@ function BeatriceAgent({
       if (isImage) {
          if (previewUrl) {
             const base64Data = previewUrl.split(',')[1];
-            // Always use sendVideoToLive (realtimeInput) for images as it's more reliable than inlineData
-            sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Please look at it and respond.`);
+            // Send Supabase URL to AI if available, along with inline data
+            if (supabaseUrl) {
+              sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Image URL: ${supabaseUrl} - Please look at it and respond.`);
+            } else {
+              sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Please look at it and respond.`);
+            }
             sendVideoToLive(base64Data);
-            // Send extra frames to ensure the AI frame sampler catches it
             setTimeout(() => sendVideoToLive(base64Data), 400);
             setTimeout(() => sendVideoToLive(base64Data), 800);
          }
       } else if (isVideo) {
-         if (previewUrl) {
-            const base64Data = previewUrl.split(',')[1];
-            sendTextToLive(`${settings.userName} uploaded a video named ${safeName}. Please look at the frame and respond.`);
-            sendVideoToLive(base64Data);
-            setTimeout(() => sendVideoToLive(base64Data), 400);
+         // Use the video frames that were extracted and uploaded to Supabase
+         if (videoFrames.length > 0) {
+           sendTextToLive(`${settings.userName} uploaded a video named ${safeName} with ${videoFrames.length} frames extracted at 1-second intervals. Frame URLs (hidden from frontend, for AI analysis only): ${videoFrames.join(', ')}. Please analyze all frames and describe what happens in the video.`);
+
+           // Send frame URLs to AI for analysis
+           for (let i = 0; i < videoFrames.length; i++) {
+             sendTextToLive(`Frame ${i + 1}/${videoFrames.length}: ${videoFrames[i]}`);
+             await new Promise(r => setTimeout(r, 100));
+           }
+         } else if (previewUrl) {
+           // Fallback to single frame if frame extraction failed
+           const base64Data = previewUrl.split(',')[1];
+           sendTextToLive(`${settings.userName} uploaded a video named ${safeName}. Video URL: ${supabaseUrl || 'unavailable'}. Please look at the preview frame and respond.`);
+           sendVideoToLive(base64Data);
+           setTimeout(() => sendVideoToLive(base64Data), 400);
          }
       } else if (isAudio) {
           const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
