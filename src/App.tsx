@@ -27,7 +27,13 @@ import {
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BASE_LIVE_AGENT_PROMPT, BIBLE_PERSONALITY } from './lib/personality';
-import { supabase, uploadFileToSupabase, uploadBase64ImageToSupabase, uploadVideoFrameToSupabase, extractVideoFrames } from './lib/supabase';
+import { 
+  supabase, 
+  uploadFileToSupabase, 
+  uploadBase64ImageToSupabase, 
+  uploadVideoFrameToSupabase, 
+  extractVideoFrames 
+} from './lib/supabase';
 import {
   Loader2,
   Power,
@@ -3609,33 +3615,9 @@ function BeatriceAgent({
       } catch (e) {}
     }
 
-    // Upload to Supabase storage
-    let supabasePath = '';
-    let supabaseUrl = '';
-    let videoFrames: string[] = [];
-
-    try {
-      const uploadResult = await uploadFileToSupabase(file, 'uploads');
-      if (!uploadResult.error && uploadResult.publicUrl) {
-        supabasePath = uploadResult.path;
-        supabaseUrl = uploadResult.publicUrl;
-
-        // For videos, extract frames and upload to Supabase (AI-only, hidden from frontend)
-        if (isVideo && previewUrl) {
-          videoFrames = await extractVideoFramesForAI(file, previewUrl, supabasePath);
-        }
-      }
-    } catch (e) {
-      console.error('Supabase upload error:', e);
-    }
-
-    // Pass conditionally generated previews ensuring we never pass "undefined" mapped fields to Firebase.
     const extraData: any = { fileName: safeName, fileType };
     if (previewUrl) extraData.previewUrl = previewUrl;
     if (previewText) extraData.previewText = previewText;
-    if (supabasePath) extraData.supabasePath = supabasePath;
-    if (supabaseUrl) extraData.supabaseUrl = supabaseUrl;
-    if (videoFrames.length > 0) extraData.videoFrames = videoFrames;
 
     saveMessage('user', `[Attached file: ${safeName}]`, extraData);
 
@@ -3655,30 +3637,42 @@ function BeatriceAgent({
       if (isImage) {
          if (previewUrl) {
             const base64Data = previewUrl.split(',')[1];
-            // Send Supabase URL to AI if available, along with inline data
-            if (supabaseUrl) {
-              sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Image URL: ${supabaseUrl} - Please look at it and respond.`);
-            } else {
-              sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Please look at it and respond.`);
+
+            const { publicUrl: imgSupabaseUrl, error: uploadError } = await uploadBase64ImageToSupabase(base64Data, 'uploads');
+
+            if (!uploadError && imgSupabaseUrl) {
+              const hiddenUrl = `${imgSupabaseUrl}?t=${Date.now()}`;
+              sendTextToLive(`${settings.userName} uploaded an image named ${safeName}. Image URL (hidden from frontend): ${hiddenUrl}. Please look at it and respond.`);
             }
+
             sendVideoToLive(base64Data);
             setTimeout(() => sendVideoToLive(base64Data), 400);
             setTimeout(() => sendVideoToLive(base64Data), 800);
          }
       } else if (isVideo) {
          // Use the video frames that were extracted and uploaded to Supabase
-         if (videoFrames.length > 0) {
-           sendTextToLive(`${settings.userName} uploaded a video named ${safeName} with ${videoFrames.length} frames extracted at 1-second intervals. Frame URLs (hidden from frontend, for AI analysis only): ${videoFrames.join(', ')}. Please analyze all frames and describe what happens in the video.`);
+         const { frames } = await extractVideoFrames(file, 1);
 
-           // Send frame URLs to AI for analysis
-           for (let i = 0; i < videoFrames.length; i++) {
-             sendTextToLive(`Frame ${i + 1}/${videoFrames.length}: ${videoFrames[i]}`);
-             await new Promise(r => setTimeout(r, 100));
+         if (frames.length > 0) {
+           const frameUrls: string[] = [];
+
+           for (const frameBase64 of frames) {
+             const { publicUrl: frameUrl, error: frameError } = await uploadVideoFrameToSupabase(frameBase64, 'frames');
+             if (!frameError && frameUrl) {
+               frameUrls.push(`${frameUrl}?t=${Date.now()}`);
+             }
+             await new Promise(r => setTimeout(r, 50));
+           }
+
+           sendTextToLive(`${settings.userName} uploaded a video named ${safeName} with ${frames.length} frames. Frame URLs (hidden from frontend, for AI analysis only): ${frameUrls.join(', ')}. Please analyze all frames and respond.`);
+
+           for (let i = 0; i < frames.length; i++) {
+             sendVideoToLive(frames[i]);
+             await new Promise(r => setTimeout(r, 200));
            }
          } else if (previewUrl) {
-           // Fallback to single frame if frame extraction failed
            const base64Data = previewUrl.split(',')[1];
-           sendTextToLive(`${settings.userName} uploaded a video named ${safeName}. Video URL: ${supabaseUrl || 'unavailable'}. Please look at the preview frame and respond.`);
+           sendTextToLive(`${settings.userName} uploaded a video named ${safeName}. Please look at the preview frame and respond.`);
            sendVideoToLive(base64Data);
            setTimeout(() => sendVideoToLive(base64Data), 400);
          }
