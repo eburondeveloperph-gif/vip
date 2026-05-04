@@ -71,9 +71,9 @@ export class AudioRecorder {
   private audioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private processor: ScriptProcessorNode | null = null;
-  private onData: (base64: string) => void;
+  private onData: (base64: string, rms: number) => void;
 
-  constructor(onData: (base64: string) => void) {
+  constructor(onData: (base64: string, rms: number) => void) {
     this.onData = onData;
   }
 
@@ -104,6 +104,12 @@ export class AudioRecorder {
     this.processor = this.audioContext.createScriptProcessor(2048, 1, 1);
     this.processor.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
+
+      // Compute RMS for noise gate in caller.
+      let sumSq = 0;
+      for (let i = 0; i < input.length; i++) sumSq += input[i] * input[i];
+      const rms = Math.sqrt(sumSq / input.length);
+
       const output = new Int16Array(input.length);
       for (let i = 0; i < input.length; i++) {
         const s = Math.max(-1, Math.min(1, input[i]));
@@ -119,7 +125,7 @@ export class AudioRecorder {
       for (let i = 0; i < bytes.byteLength; i++) {
         binary += String.fromCharCode(bytes[i]);
       }
-      this.onData(btoa(binary));
+      this.onData(btoa(binary), rms);
     };
 
     source.connect(this.processor);

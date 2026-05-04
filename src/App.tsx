@@ -1758,9 +1758,37 @@ function BeatriceAgent({
   const videoStartingRef = useRef(false);
   const ownerIdRef = useRef(`vep-owner-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
+  // Speech dedup: track last phrase spoken by model so near-identical
+  // repetitions within 6 seconds are suppressed before playback queues.
+  const lastModelPhraseRef = useRef('');
+  const lastModelPhraseAtRef = useRef(0);
+
+  // Camera watchdog: track last frame successfully sent so we can detect stalls.
+  const lastFrameSentAtRef = useRef(0);
+  const cameraWatchdogRef = useRef<any>(null);
+
+  // Thermal / low-power mode: auto-engage after 8 min of active session.
+  const sessionStartAtRef = useRef(0);
+  const lowPowerActiveRef = useRef(false);
+  const thermalTimerRef = useRef<any>(null);
+
+  // Online/offline state
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   },[isMuted]);
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   useEffect(() => {
     isActiveRef.current = isActive;
@@ -2088,11 +2116,36 @@ function BeatriceAgent({
     modelTranscriptBufferRef.current = '';
   };
 
+  const HARD_STOP_COMMANDS = /^(stop(?: talking)?|be quiet|silence|shut up|pause|hold on|mute(?: yourself)?|switch off|shut down|turn off)$/i;
+  const HARD_MUTE_COMMANDS = /^(mute(?: yourself)?|go quiet|stop speaking)$/i;
+  const HARD_END_COMMANDS = /^(switch off|shut down|turn off)$/i;
+
   const sendChatMessage = (e?: FormEvent) => {
     if (e) e.preventDefault();
 
     const clean = chatInput.trim();
     if (!clean) return;
+
+    // Hard commands execute locally — stop speech immediately, skip model roundtrip.
+    if (HARD_STOP_COMMANDS.test(clean)) {
+      interruptAgentSpeech();
+      saveMessage('user', clean);
+      if (HARD_END_COMMANDS.test(clean)) {
+        stopSession();
+        const ack = 'Okay, switching off.';
+        updateLiveTranscript('model', ack, 3200);
+        saveMessage('model', ack);
+      } else {
+        const ack = HARD_MUTE_COMMANDS.test(clean) ? 'Okay, muted.' : 'Okay.';
+        updateLiveTranscript('model', ack, 3200);
+        saveMessage('model', ack);
+        if (HARD_MUTE_COMMANDS.test(clean) && !isMuted) {
+          setIsMuted(true);
+        }
+      }
+      setChatInput('');
+      return;
+    }
 
     saveMessage('user', clean);
     updateLiveTranscript('user', clean, 3200);
@@ -2875,6 +2928,11 @@ function BeatriceAgent({
       videoIntervalRef.current = null;
     }
 
+    if (cameraWatchdogRef.current) {
+      clearInterval(cameraWatchdogRef.current);
+      cameraWatchdogRef.current = null;
+    }
+
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
@@ -2894,6 +2952,11 @@ function BeatriceAgent({
 
   const startSession = async (options: { sendGreeting?: boolean } = {}): Promise<boolean> => {
     const { sendGreeting = true } = options;
+
+    if (!navigator.onLine) {
+      saveMessage('model', "You appear to be offline. Please check your connection and try again.");
+      return false;
+    }
 
     if (LIVE_RUNTIME.startPromise) {
       startPromiseRef.current = LIVE_RUNTIME.startPromise;
@@ -2924,7 +2987,9 @@ function BeatriceAgent({
 
     const startPromise = (async () => {
       if (!aiRef.current) {
-        alert('Gemini API key is missing. Make sure GEMINI_API_KEY is set in your hosting environment, then redeploy.');
+        saveMessage('model', 'Cannot connect — the API key is not configured. Please contact your administrator or check the deployment settings.');
+        setConnecting(false);
+        return false;
         return false;
       }
 
@@ -3124,6 +3189,9 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
           `You have URL context retrieval enabled. When the user shares a URL or asks about content from a specific webpage, use the URL context tool to fetch and read the page content directly. Do not guess or summarize without fetching.`,
           `Error handling rule: when a tool call fails or returns an error, describe what happened in one plain human sentence ("That didn't go through.", "I couldn't reach Gmail just now.", "The file didn't upload — want to try again?"). Do NOT show raw error codes, stack traces, or developer-level error messages to the user. Do NOT blame the internet connection unless you have confirmed evidence of a network failure. Do NOT blame the user's device. Keep error reports short and actionable.`,
           `Voice consistency rule: always use the voice setting chosen in the user's profile. Do not suggest switching voices mid-session. If the voice quality sounds different than expected, continue normally — do not comment on it or apologize for it.`,
+          `Phone and device settings rule: never change, toggle, or adjust any device setting (Wi-Fi, Bluetooth, mobile data, flashlight, screen brightness, notifications, location, etc.) without first stating what you are about to do and waiting for the user to confirm. Say: "I'm about to turn off Wi-Fi — should I go ahead?" Always wait for a "yes" before proceeding. If the platform does not allow direct device-setting control from the web app, say so and explain what the user should do manually.`,
+          `Native phone features rule: this is a web application. It does NOT have access to: SMS messages, WhatsApp, iMessage, phone call logs, local phone contacts (unless connected via Google Contacts), phone OS settings, native app data, or local file system. If the user asks to "search the phone", "check messages", "send a WhatsApp", or "open settings", explain clearly: "I can only access what's available through the web browser. For phone messages and native apps, you'll need to open those directly on your phone." For Google contacts and calendar, those are available only when Google account is connected.`,
+          `Online/offline capability rule: when the user is offline (no internet connection), the following are unavailable: live voice session, Gemini AI responses, Google services (Gmail, Drive, Calendar, etc.), and Zapier. The following work offline: viewing saved chat history and profile settings. If the user is offline and tries to start a session, tell them plainly: "You appear to be offline. Please check your connection and try again."`,
         ].filter(Boolean).join('\n\n');
 
         const session = await aiRef.current.live.connect({
@@ -3235,9 +3303,15 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                         ...download,
                       } : t));
 
+                      const friendlyErr = result.error?.includes('401') || result.error?.includes('403')
+                        ? `${toolName}: Access denied. You may need to reconnect Google in Profile.`
+                        : result.error?.includes('404')
+                          ? `${toolName}: Item not found.`
+                          : `${toolName}: Something didn't go through. Try again.`;
+
                       saveMessage(
                         'model',
-                        `Tool failed from ${toolName}: ${result.error}`,
+                        friendlyErr,
                         {
                           toolName,
                           toolResult: result,
@@ -3284,9 +3358,20 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
 
                 if (serverContent.outputTranscription?.text) {
                   const outputText = serverContent.outputTranscription.text;
-                  modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + outputText).trim();
-                  setLiveModelText(modelTranscriptBufferRef.current);
-                  updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
+                  const newBuffer = (modelTranscriptBufferRef.current + outputText).trim();
+
+                  // Dedup: suppress near-identical phrase repeated within 6s.
+                  const norm = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+                  const now = Date.now();
+                  const tooSimilar =
+                    now - lastModelPhraseAtRef.current < 6000 &&
+                    norm(newBuffer).startsWith(norm(lastModelPhraseRef.current).slice(0, 40));
+
+                  if (!tooSimilar) {
+                    modelTranscriptBufferRef.current = newBuffer;
+                    setLiveModelText(modelTranscriptBufferRef.current);
+                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
+                  }
                 }
 
                 const parts = serverContent.modelTurn?.parts;
@@ -3296,7 +3381,21 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                     if (LIVE_RUNTIME.generation !== sessionGeneration) return;
 
                     if (part.inlineData?.data) {
-                      audioStreamerRef.current?.addPCM16(part.inlineData.data);
+                      // Dedup audio: if model is repeating the same phrase within 6s,
+                      // skip queuing the audio chunk to prevent double-voice.
+                      const now = Date.now();
+                      const currentPhrase = modelTranscriptBufferRef.current;
+                      const norm = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+                      const isDup =
+                        now - lastModelPhraseAtRef.current < 6000 &&
+                        norm(currentPhrase) !== '' &&
+                        norm(currentPhrase) === norm(lastModelPhraseRef.current);
+
+                      if (!isDup) {
+                        audioStreamerRef.current?.addPCM16(part.inlineData.data);
+                      }
+                      lastModelPhraseRef.current = currentPhrase;
+                      lastModelPhraseAtRef.current = now;
                       setIsAgentSpeaking(true);
 
                       setTimeout(() => {
@@ -3362,9 +3461,12 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
         LIVE_RUNTIME.isClosing = false;
         sessionRef.current = session;
 
-        const recorder = new AudioRecorder((base64) => {
+        const recorder = new AudioRecorder((base64, rmsLevel) => {
           if (LIVE_RUNTIME.generation !== sessionGeneration) return;
           if (isMutedRef.current) return;
+          // Noise gate: skip frames below RMS threshold to reduce background noise
+          // sensitivity. 0.006 is roughly ambient office noise floor.
+          if (typeof rmsLevel === 'number' && rmsLevel < 0.006 && !isAgentSpeaking) return;
 
           sendAudioToLive(base64);
         });
@@ -3384,6 +3486,18 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
         isActiveRef.current = true;
         setConnecting(false);
         startMicVisualizer();
+
+        // Thermal guard: after 8 min of active session enable low-power mode
+        // (slows camera interval, reduces animations via CSS class).
+        sessionStartAtRef.current = Date.now();
+        lowPowerActiveRef.current = false;
+        if (thermalTimerRef.current) clearTimeout(thermalTimerRef.current);
+        thermalTimerRef.current = setTimeout(() => {
+          if (LIVE_RUNTIME.generation === sessionGeneration) {
+            lowPowerActiveRef.current = true;
+            console.info('Low-power mode engaged after 8 min session.');
+          }
+        }, 8 * 60 * 1000);
 
         // Control race conditions of initial prompt to prevent AI from speaking twice.
         if (sendGreeting) {
@@ -3501,6 +3615,8 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
         videoIntervalRef.current = null;
       }
 
+      lastFrameSentAtRef.current = Date.now();
+
       videoIntervalRef.current = setInterval(() => {
         if (!videoEnabledRef.current) return;
         if (sessionGenerationRef.current !== activeVideoSessionGeneration) return;
@@ -3509,6 +3625,12 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
         const v = videoRef.current;
         const c = canvasRef.current;
         const ctx = c.getContext('2d');
+
+        // Low-power mode: slow to 3s interval when thermals engaged.
+        if (lowPowerActiveRef.current) {
+          const elapsed = Date.now() - lastFrameSentAtRef.current;
+          if (elapsed < 3000) return;
+        }
 
         if (ctx && v.videoWidth > 0 && v.videoHeight > 0) {
           c.width = v.videoWidth;
@@ -3520,9 +3642,29 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
 
           if (base64Data) {
             sendVideoToLive(base64Data);
+            lastFrameSentAtRef.current = Date.now();
           }
         }
       }, 900);
+
+      // Camera watchdog: if no frame has been sent for >8s while camera is on,
+      // the video track likely stalled. Stop and restart the camera stream.
+      if (cameraWatchdogRef.current) clearInterval(cameraWatchdogRef.current);
+      cameraWatchdogRef.current = setInterval(async () => {
+        if (!videoEnabledRef.current) return;
+        if (sessionGenerationRef.current !== activeVideoSessionGeneration) return;
+        const stalledMs = Date.now() - lastFrameSentAtRef.current;
+        if (stalledMs > 8000 && !videoStartingRef.current) {
+          console.warn('Camera stall detected — restarting stream.');
+          const currentFacing = facingMode;
+          stopVideoStream(false);
+          await new Promise(r => setTimeout(r, 500));
+          // Re-trigger video start
+          setIsVideoEnabled(false);
+          setFacingMode(currentFacing);
+          setTimeout(() => toggleVideo(), 200);
+        }
+      }, 5000);
     } catch (e) {
       console.error('Camera error:', e);
       stopVideoStream(false);
@@ -3890,6 +4032,12 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
       greetingTimeoutRef.current = null;
     }
 
+    if (thermalTimerRef.current) {
+      clearTimeout(thermalTimerRef.current);
+      thermalTimerRef.current = null;
+    }
+    lowPowerActiveRef.current = false;
+
     stopMicVisualizer();
     stopVideoStream(false);
 
@@ -4174,6 +4322,11 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
               isAgentSpeaking ? 'border-lime-300/50 bg-lime-300/10 text-lime-300' : 'border-sky-400/50 bg-sky-400/10 text-sky-300'
             }`}>
               {isAgentSpeaking ? 'Speaking...' : 'Listening...'}
+            </span>
+          )}
+          {!isOnline && (
+            <span className="rounded-full border border-red-400/50 bg-red-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-red-300">
+              Offline
             </span>
           )}
         </div>
