@@ -1710,6 +1710,7 @@ function BeatriceAgent({
   const[speakerLevel, setSpeakerLevel] = useState(0);
   const [speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
   const [tasks, setTasks] = useState<ActionTask[]>([]);
+  const isTaskProcessing = tasks.some(t => t.status === 'processing');
   const [historyContext, setHistoryContext] = useState<string>('');
   const[historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
   const [userKnowledgeDocs, setUserKnowledgeDocs] = useState<KnowledgeDoc[]>([]);
@@ -4297,7 +4298,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
             </div>
 
             <AnimatePresence>
-              {currentTranscript && (
+              {currentTranscript && !isTaskProcessing && (
                 <motion.div
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -4373,15 +4374,20 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
             <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-lime-300/[0.04] to-transparent" />
           </div>
 
-          <LimeVoiceOrb
-            isActive={isActive}
-            isAgentSpeaking={isAgentSpeaking}
-            speakerLevel={speakerLevel}
-            speakerBands={speakerBands}
-          />
+          <motion.div
+            animate={{ opacity: isTaskProcessing ? 0 : 1, scale: isTaskProcessing ? 0.8 : 1 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+          >
+            <LimeVoiceOrb
+              isActive={isActive}
+              isAgentSpeaking={isAgentSpeaking}
+              speakerLevel={speakerLevel}
+              speakerBands={speakerBands}
+            />
+          </motion.div>
 
           <AnimatePresence>
-            {currentTranscript && (
+            {currentTranscript && !isTaskProcessing && (
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -4398,8 +4404,25 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
             )}
           </AnimatePresence>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end">
-            <div className="mb-4 w-full max-w-md space-y-2 px-6">
+          <motion.div
+            className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end"
+            animate={isTaskProcessing ? { y: '-38vh' } : { y: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+          >
+            <AnimatePresence>
+              {isTaskProcessing && (
+                <motion.p
+                  key="working-label"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="mb-3 text-[9px] font-black uppercase tracking-[0.28em] text-lime-300/70"
+                >
+                  Working…
+                </motion.p>
+              )}
+            </AnimatePresence>
+            <div className={`mb-4 w-full px-6 space-y-2 ${isTaskProcessing ? 'max-w-lg' : 'max-w-md'}`}>
               <AnimatePresence>
                 {tasks.map(task => (
                   <motion.div
@@ -4408,11 +4431,11 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                     initial={{ opacity: 0, x: -50, scale: 0.9 }}
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
-                    className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-lime-300/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl"
+                    className={`flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-lime-300/50 bg-[#0A0A0B]/80 shadow-2xl backdrop-blur-xl ${isTaskProcessing && task.status === 'processing' ? 'p-5' : 'p-3'}`}
                   >
                     <div className="relative shrink-0">
                       {task.status === 'processing' ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-lime-300" />
+                        <Loader2 className={`animate-spin text-lime-300 ${isTaskProcessing ? 'h-6 w-6' : 'h-4 w-4'}`} />
                       ) : task.status === 'completed' ? (
                         <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
                           <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
@@ -4424,10 +4447,10 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
 
                     <div className="min-w-0 flex-1">
                       <div className="mb-0.5 flex items-center justify-between">
-                        <span className="text-[9px] font-bold uppercase tracking-widest text-lime-300">{task.serviceName}</span>
+                        <span className={`font-bold uppercase tracking-widest text-lime-300 ${isTaskProcessing && task.status === 'processing' ? 'text-[10px]' : 'text-[9px]'}`}>{task.serviceName}</span>
                         <span className="font-mono text-[8px] text-zinc-600">{task.status.toUpperCase()}</span>
                       </div>
-                      <p className="truncate text-xs text-zinc-100">{task.action}</p>
+                      <p className={`truncate text-zinc-100 ${isTaskProcessing && task.status === 'processing' ? 'text-sm' : 'text-xs'}`}>{task.action}</p>
                       {task.result && (
                         <motion.p
                           initial={{ opacity: 0, height: 0 }}
@@ -4507,7 +4530,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                 </button>
               </div>
             </div>
-          </div>
+          </motion.div>
         </main>
       )}
 
