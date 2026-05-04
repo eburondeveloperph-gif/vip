@@ -1002,10 +1002,12 @@ function OneLineStreamingTranscript({
   text,
   role,
   name,
+  userName,
 }: {
   text: string;
   role: 'user' | 'model';
   name: string;
+  userName?: string;
 }) {
   return (
     <motion.div
@@ -1025,7 +1027,7 @@ function OneLineStreamingTranscript({
               : 'border border-lime-300/25 bg-lime-400/10 text-lime-300'
           }`}
         >
-          {role === 'user' ? 'You' : name}
+          {role === 'user' ? (userName || 'You') : name}
         </span>
 
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -1919,11 +1921,10 @@ function BeatriceAgent({
   const saveUserBuffer = () => {
     const clean = userTranscriptBufferRef.current.trim();
     if (!clean) return;
-    if (clean === lastSavedUserTranscriptRef.current) return;
 
-    lastSavedUserTranscriptRef.current = clean;
     saveMessage('user', clean);
     userTranscriptBufferRef.current = '';
+    lastSavedUserTranscriptRef.current = clean;
     setLiveUserText('');
   };
 
@@ -3344,14 +3345,19 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                 if (serverContent.interrupted) {
                   audioStreamerRef.current?.stop();
                   setIsAgentSpeaking(false);
-                  
+
                   saveModelBuffer();
+                  // New user turn starting — reset accumulator so previous
+                  // speech fragments don't bleed into the next utterance.
+                  userTranscriptBufferRef.current = '';
                   return;
                 }
 
                 if (serverContent.inputTranscription?.text) {
                   const inputText = serverContent.inputTranscription.text;
-                  userTranscriptBufferRef.current = inputText.trim();
+                  // Append incremental chunks the same way outputTranscription does,
+                  // so partial speech segments accumulate into a full sentence.
+                  userTranscriptBufferRef.current = (userTranscriptBufferRef.current + ' ' + inputText).trim();
                   setLiveUserText(userTranscriptBufferRef.current);
                   updateLiveTranscript('user', userTranscriptBufferRef.current, 3200);
                 }
@@ -4294,6 +4300,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                     role={currentTranscript.role}
                     text={currentTranscript.text}
                     name={settings.agentName}
+                    userName={settings.userName}
                   />
                 </motion.div>
               )}
@@ -4377,6 +4384,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                   role={currentTranscript.role}
                   text={currentTranscript.text}
                   name={settings.agentName}
+                  userName={settings.userName}
                 />
               </motion.div>
             )}
