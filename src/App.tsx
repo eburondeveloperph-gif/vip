@@ -3347,9 +3347,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                   setIsAgentSpeaking(false);
 
                   saveModelBuffer();
-                  // New user turn starting — reset accumulator so previous
-                  // speech fragments don't bleed into the next utterance.
-                  userTranscriptBufferRef.current = '';
+                  saveUserBuffer(); // save before reset so interrupted speech isn't lost
                   return;
                 }
 
@@ -3420,14 +3418,20 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
                 }
 
                 if (serverContent.turnComplete) {
-                  saveModelBuffer();
+                  // User spoke first, model responded — save in that order so
+                  // Firebase timestamps match the correct conversational sequence.
                   saveUserBuffer();
+                  saveModelBuffer();
                 }
               }
             },
 
             onclose: () => {
               if (LIVE_RUNTIME.generation !== sessionGeneration) return;
+
+              // Flush any in-flight transcription before tearing down.
+              saveModelBuffer();
+              saveUserBuffer();
 
               LIVE_RUNTIME.session = null;
               LIVE_RUNTIME.audioRecorder = null;
@@ -3442,7 +3446,7 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
               setIsActive(false);
               setConnecting(false);
               setIsAgentSpeaking(false);
-              
+
               setLiveUserText('');
               setLiveModelText('');
               setCurrentTranscript(null);
@@ -4046,6 +4050,10 @@ The phrase "CEO-grade" means: when the user prints the HTML and hands it to a bo
 
     stopMicVisualizer();
     stopVideoStream(false);
+
+    // Flush any speech that didn't reach a turnComplete event.
+    saveModelBuffer();
+    saveUserBuffer();
 
     modelTranscriptBufferRef.current = '';
     userTranscriptBufferRef.current = '';
